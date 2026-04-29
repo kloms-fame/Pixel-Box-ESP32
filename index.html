@@ -1,131 +1,296 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
+
 <head>
   <meta charset="UTF-8">
-  <title>Pixel-Box 控制中心</title>
+  <title>Pixel-Box 核心终端</title>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 420px; margin: 30px auto; padding: 20px; background: #0f111a; color: #e4e4e7; }
-    .card { background: #181825; padding: 20px; border-radius: 12px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.5); border: 1px solid #2a2a35; }
-    h2 { font-size: 16px; margin-top: 0; color: #f4f4f5; font-weight: 600; border-bottom: 1px solid #2a2a35; padding-bottom: 10px; margin-bottom: 15px; }
-    button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-size: 14px; font-weight: 600; margin: 5px 5px 5px 0; transition: background 0.2s; }
-    button:hover { background: #2563eb; }
-    button:disabled { background: #27272a; color: #52525b; cursor: not-allowed; }
-    input { padding: 8px; margin: 5px 5px 5px 0; background: #27272a; border: 1px solid #3f3f46; color: #fff; border-radius: 5px; width: 60px; text-align: center; }
-    .log { height: 140px; overflow-y: auto; background: #09090b; color: #10b981; padding: 12px; border-radius: 8px; font-size: 12px; margin-top: 10px; font-family: monospace; border: 1px solid #27272a; }
+    :root {
+      --bg: #09090b;
+      --panel: #18181b;
+      --accent: #0ea5e9;
+      --danger: #ef4444;
+      --text: #a1a1aa;
+      --border: #27272a;
+    }
+
+    body {
+      font-family: 'JetBrains Mono', Consolas, monospace;
+      max-width: 520px;
+      margin: 30px auto;
+      padding: 20px;
+      background: var(--bg);
+      color: var(--text);
+    }
+
+    .terminal-card {
+      background: var(--panel);
+      padding: 20px;
+      border-radius: 4px;
+      margin-bottom: 20px;
+      border: 1px solid var(--border);
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+    }
+
+    h2 {
+      font-size: 14px;
+      margin-top: 0;
+      color: #f4f4f5;
+      text-transform: uppercase;
+      border-bottom: 1px dashed var(--border);
+      padding-bottom: 10px;
+      margin-bottom: 16px;
+    }
+
+    button {
+      background: transparent;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 8px 16px;
+      border-radius: 2px;
+      cursor: pointer;
+      font-size: 12px;
+      transition: all 0.2s;
+      margin: 4px;
+    }
+
+    button:hover {
+      background: var(--accent);
+      color: #000;
+    }
+
+    button:disabled {
+      border-color: #3f3f46;
+      color: #52525b;
+      cursor: not-allowed;
+    }
+
+    .btn-danger {
+      color: var(--danger);
+      border-color: var(--danger);
+    }
+
+    .btn-danger:hover {
+      background: var(--danger);
+      color: #fff;
+    }
+
+    .device-list {
+      background: #000;
+      border-radius: 2px;
+      padding: 12px;
+      min-height: 40px;
+      max-height: 250px;
+      overflow-y: auto;
+      margin-top: 12px;
+      border: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .device-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 0;
+      border-bottom: 1px solid #1f1f22;
+    }
+
+    .device-item:last-child {
+      border-bottom: none;
+    }
+
+    .slider-container {
+      display: flex;
+      align-items: center;
+      gap: 15px;
+      margin: 15px 0;
+      font-size: 12px;
+      color: #f4f4f5;
+    }
+
+    input[type="range"] {
+      flex-grow: 1;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    .log-window {
+      height: 160px;
+      overflow-y: auto;
+      background: #000;
+      color: #10b981;
+      padding: 12px;
+      border-radius: 2px;
+      font-size: 11px;
+      border: 1px solid var(--border);
+      white-space: pre-wrap;
+      word-wrap: break-word;
+    }
   </style>
 </head>
+
 <body>
-  <div class="card">
-    <h2>🔗 BLE 核心连接</h2>
-    <button id="connectBtn">接入 Pixel-Box-Mini</button>
-    <button id="disconnectBtn" disabled>切断连接</button>
+  <div class="terminal-card">
+    <h2>[ SYS_LINK ] 网关协议</h2>
+    <button id="connectBtn">> INIT_CONNECTION</button>
+    <button id="disconnectBtn" disabled>> TERMINATE</button>
   </div>
 
-  <div class="card">
-    <h2>🕒 桌面时钟模式</h2>
-    <button id="syncTimeBtn" disabled>推流本地时间并全屏显示</button>
+  <div class="terminal-card">
+    <h2>[ RDR_SCAN ] 广域设备雷达</h2>
+    <button id="scanBtn" disabled>> EXECUTE_FULL_SCAN</button>
+    <div class="device-list" id="deviceList">
+      <div style="color:#52525b; text-align:center;">// AWAITING RADAR DEPLOYMENT</div>
+    </div>
   </div>
 
-  <div class="card">
-    <h2>🔆 亮度与画图</h2>
-    <input type="number" id="brightness" value="30" min="0" max="255">
-    <button id="setBrightnessBtn" disabled>设定亮度</button>
-    <br><br>
-    R:<input type="number" id="r" value="255" min="0" max="255">
-    G:<input type="number" id="g" value="0" min="0" max="255">
-    B:<input type="number" id="b" value="0" min="0" max="255">
-    <button id="fillBtn" disabled>RGB 填充</button>
-    <button id="clearBtn" disabled>一键清屏</button>
+  <div class="terminal-card">
+    <h2>[ SYS_CMD ] 显示模式与全局亮度</h2>
+    <div class="slider-container">
+      <label>🔆 亮度调优:</label>
+      <input type="range" id="brightSlider" min="0" max="255" value="30" disabled>
+      <span id="brightVal">30</span>
+    </div>
+    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+      <button id="syncTimeBtn" disabled>🕒 切至系统时钟</button>
+      <button id="showDataBtn" disabled>🚴 切至运动面板</button>
+      <button id="clearBtn" class="btn-danger" disabled>📴 强制切断/息屏</button>
+    </div>
   </div>
 
-  <div class="card">
-    <h2>📜 交互日志</h2>
-    <div class="log" id="log"></div>
+  <div class="terminal-card">
+    <h2>[ LOG_OUT ] 交互日志</h2>
+    <div class="log-window" id="log"></div>
   </div>
 
   <script>
     const SERVICE_UUID = "6e400001-b5a3-f393-e0a9-e50e24dcca9e";
     const CHAR_RX_UUID = "6e400003-b5a3-f393-e0a9-e50e24dcca9e";
+    const CHAR_TX_UUID = "6e400004-b5a3-f393-e0a9-e50e24dcca9e";
 
-    let device = null;
-    let rxChar = null;
+    let device, rxChar, txChar;
+    const logEl = document.getElementById('log');
+    const deviceListEl = document.getElementById('deviceList');
+    const discoveredDevices = new Set();
 
-    const connectBtn = document.getElementById('connectBtn');
-    const disconnectBtn = document.getElementById('disconnectBtn');
-    const syncTimeBtn = document.getElementById('syncTimeBtn');
-    const setBrightnessBtn = document.getElementById('setBrightnessBtn');
-    const fillBtn = document.getElementById('fillBtn');
-    const clearBtn = document.getElementById('clearBtn');
-    const log = document.getElementById('log');
-
-    function addLog(text) {
-      const time = new Date().toLocaleTimeString();
-      log.innerHTML += `[${time}] ${text}\n`;
-      log.scrollTop = log.scrollHeight;
+    function log(msg) {
+      logEl.innerHTML += `> ${new Date().toLocaleTimeString('en-US', { hour12: false })} | ${msg}\n`;
+      logEl.scrollTop = logEl.scrollHeight;
     }
 
-    connectBtn.addEventListener('click', async () => {
+    document.getElementById('connectBtn').addEventListener('click', async () => {
       try {
-        addLog("系统扫描中...");
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ services: [SERVICE_UUID] }]
-        });
+        log("NEGOTIATING HANDSHAKE...");
+        device = await navigator.bluetooth.requestDevice({ filters: [{ services: [SERVICE_UUID] }] });
         const server = await device.gatt.connect();
-        addLog("✅ 链路已建立: " + device.name);
         const service = await server.getPrimaryService(SERVICE_UUID);
         rxChar = await service.getCharacteristic(CHAR_RX_UUID);
-        
-        connectBtn.disabled = true;
-        [disconnectBtn, syncTimeBtn, setBrightnessBtn, fillBtn, clearBtn].forEach(btn => btn.disabled = false);
-      } catch (error) {
-        addLog("❌ 链路失败: " + error.message);
-      }
+        txChar = await service.getCharacteristic(CHAR_TX_UUID);
+
+        await txChar.startNotifications();
+        txChar.addEventListener('characteristicvaluechanged', handleRadarPing);
+
+        document.getElementById('connectBtn').disabled = true;
+        ['disconnectBtn', 'scanBtn', 'syncTimeBtn', 'showDataBtn', 'clearBtn', 'brightSlider'].forEach(id => document.getElementById(id).disabled = false);
+        log("LINK_ESTABLISHED: " + device.name);
+      } catch (e) { log("ERR_CONNECT: " + e.message); }
     });
 
-    disconnectBtn.addEventListener('click', async () => {
-      if (device && device.gatt.connected) await device.gatt.disconnect();
-      connectBtn.disabled = false;
-      [disconnectBtn, syncTimeBtn, setBrightnessBtn, fillBtn, clearBtn].forEach(btn => btn.disabled = true);
-      addLog("❌ 连接已主动切断");
+    document.getElementById('disconnectBtn').addEventListener('click', async () => {
+      if (device?.gatt.connected) await device.gatt.disconnect();
+      document.getElementById('connectBtn').disabled = false;
+      ['disconnectBtn', 'scanBtn', 'syncTimeBtn', 'showDataBtn', 'clearBtn', 'brightSlider'].forEach(id => document.getElementById(id).disabled = true);
+      log("LINK_TERMINATED");
     });
 
-    // 核心功能：时间同步推流
-    syncTimeBtn.addEventListener('click', async () => {
-      const now = new Date();
-      // 在浏览器端抵消时区误差，传输处理过的伪 UTC 时间戳
-      const offset = now.getTimezoneOffset() * 60000;
-      const localTimestamp = Math.floor((now.getTime() - offset) / 1000);
-      
-      const payload = new Uint8Array([
-        0x04,
-        (localTimestamp >> 24) & 0xFF,
-        (localTimestamp >> 16) & 0xFF,
-        (localTimestamp >> 8) & 0xFF,
-        localTimestamp & 0xFF
-      ]);
-      
-      await rxChar.writeValue(payload);
-      addLog(`🕒 时间帧已下发: ${now.toLocaleTimeString()}`);
+    document.getElementById('scanBtn').addEventListener('click', async () => {
+      discoveredDevices.clear();
+      deviceListEl.innerHTML = '<div style="color:var(--accent); text-align:center;">// SCANNING ALL FREQUENCIES...</div>';
+      await rxChar.writeValue(new Uint8Array([0x05]));
+      log("CMD: FULL_PROXY_SCAN_DISPATCHED");
     });
 
-    setBrightnessBtn.addEventListener('click', async () => {
-      const val = parseInt(document.getElementById('brightness').value);
+    // 亮度滑动条事件监听 (使用 change 事件避免拖动中发包堵塞蓝牙)
+    const brightSlider = document.getElementById('brightSlider');
+    brightSlider.addEventListener('change', async (e) => {
+      const val = parseInt(e.target.value);
+      document.getElementById('brightVal').innerText = val;
       await rxChar.writeValue(new Uint8Array([0x01, val]));
-      addLog(`🔆 亮度调整为: ${val}`);
+      log(`CMD: BRIGHTNESS_SET_TO -> ${val}`);
+    });
+    // 拖动过程中仅仅更新界面数字
+    brightSlider.addEventListener('input', (e) => {
+      document.getElementById('brightVal').innerText = e.target.value;
     });
 
-    fillBtn.addEventListener('click', async () => {
-      const r = parseInt(document.getElementById('r').value);
-      const g = parseInt(document.getElementById('g').value);
-      const b = parseInt(document.getElementById('b').value);
-      await rxChar.writeValue(new Uint8Array([0x02, r, g, b]));
-      addLog(`🎨 画布重写: R=${r}, G=${g}, B=${b}`);
+    // 模式切换按钮
+    document.getElementById('syncTimeBtn').addEventListener('click', async () => {
+      const now = new Date();
+      const ts = Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / 1000);
+      await rxChar.writeValue(new Uint8Array([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]));
+      log("CMD: SWAP_UI -> CLOCK_MODE");
     });
 
-    clearBtn.addEventListener('click', async () => {
+    document.getElementById('showDataBtn').addEventListener('click', async () => {
+      await rxChar.writeValue(new Uint8Array([0x08])); // 0x08 强制显示运动数据
+      log("CMD: SWAP_UI -> SENSOR_DATA_MODE");
+    });
+
+    document.getElementById('clearBtn').addEventListener('click', async () => {
       await rxChar.writeValue(new Uint8Array([0x03]));
-      addLog("🗑️ 擦除画布");
+      log("CMD: SWAP_UI -> SCREEN_OFF");
     });
+
+    function handleRadarPing(e) {
+      const v = new Uint8Array(e.target.value.buffer);
+      if (v[0] === 0x05) {
+        if (deviceListEl.innerText.includes('SCANNING')) deviceListEl.innerHTML = '';
+        const type = v[1]; // 0=Other, 1=HRM, 2=CSC
+        const addrType = v[2];
+        const macLen = v[3];
+        const macStr = new TextDecoder().decode(v.slice(4, 4 + macLen));
+        const name = new TextDecoder().decode(v.slice(4 + macLen));
+
+        if (discoveredDevices.has(macStr)) return;
+        discoveredDevices.add(macStr);
+
+        let typeStr = type === 1 ? 'HRM - 心率监测' : type === 2 ? 'CSC - 速度踏频' : 'UNK - 未知设备';
+        let typeColor = type !== 0 ? 'var(--accent)' : '#52525b';
+
+        const item = document.createElement('div');
+        item.className = 'device-item';
+        item.innerHTML = `
+          <div class="device-info">
+            <span style="color: #f4f4f5;">${name || 'UNKNOWN_NODE'}</span>
+            <span class="device-type" style="color: ${typeColor};">${typeStr} [${macStr}]</span>
+          </div>
+          <div>
+            <button onclick="bindSensor(${addrType}, '${macStr}')">CONNECT</button>
+            <button class="btn-danger" onclick="unbindSensor(${addrType}, '${macStr}')">DROP</button>
+          </div>
+        `;
+        deviceListEl.appendChild(item);
+      }
+    }
+
+    window.bindSensor = async (addrType, macStr) => {
+      const payload = new Uint8Array(2 + macStr.length);
+      payload[0] = 0x06;
+      payload[1] = addrType;
+      for (let i = 0; i < macStr.length; i++) payload[2 + i] = macStr.charCodeAt(i);
+      await rxChar.writeValue(payload);
+      log(`CMD: BINDING_ISSUED -> [${macStr}]`);
+    };
+
+    window.unbindSensor = async (addrType, macStr) => {
+      const payload = new Uint8Array(2 + macStr.length);
+      payload[0] = 0x07;
+      payload[1] = addrType;
+      for (let i = 0; i < macStr.length; i++) payload[2 + i] = macStr.charCodeAt(i);
+      await rxChar.writeValue(payload);
+      log(`CMD: DROP_ISSUED -> [${macStr}]`);
+    };
   </script>
 </body>
+
 </html>
