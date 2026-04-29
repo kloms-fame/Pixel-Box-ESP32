@@ -2,7 +2,7 @@
 #include <FastLED.h>
 #include <NimBLEDevice.h>
 #include <sys/time.h>
-#include "Config.h" // 严格保持 Config.h 作为单一真值源
+#include "Config.h" // 严格保持单一真值源
 
 // ==================== 全局状态与句柄 ====================
 CRGB leds[NUM_LEDS];
@@ -10,15 +10,22 @@ NimBLEServer *pServer = nullptr;
 NimBLECharacteristic *pRxCharacteristic = nullptr;
 NimBLECharacteristic *pTxCharacteristic = nullptr;
 
+// 界面状态机
 bool isClockMode = false;
 bool isSensorMode = false;
+bool isTimerMode = false;
 
 // 传感器数据缓存
 uint8_t currentHR = 0;
 uint16_t currentCadence = 0;
 uint16_t lastCrankRevs = 0;
 uint16_t lastCrankTime = 0;
-unsigned long lastCrankSysTime = 0; // 用于计算踏频静止超时
+unsigned long lastCrankSysTime = 0;
+
+// 计时器状态
+bool isTimerRunning = false;
+unsigned long timerStartTime = 0;
+unsigned long timerElapsed = 0; // 暂停时累计的毫秒数
 
 // 已连接的外设客户端列表
 vector<NimBLEClient *> activeClients;
@@ -77,13 +84,12 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
     {
       uint16_t crankRevs = pData[offset] | (pData[offset + 1] << 8);
       uint16_t crankTime = pData[offset + 2] | (pData[offset + 3] << 8);
-      // 只有曲柄时间戳发生变化，才代表真实踩踏发生
       if (lastCrankTime != 0 && crankTime != lastCrankTime)
       {
         uint16_t timeDiff = crankTime - lastCrankTime;
         uint16_t revsDiff = crankRevs - lastCrankRevs;
         currentCadence = (revsDiff * 60 * 1024) / timeDiff;
-        lastCrankSysTime = millis(); // 记录最新一次有效踩踏的系统时间
+        lastCrankSysTime = millis();
         Serial.printf("[🚴 CSC PARSED] 踏频更新: %d rpm\n", currentCadence);
       }
       lastCrankRevs = crankRevs;
@@ -109,7 +115,6 @@ class ClientCallbacks : public NimBLEClientCallbacks
       else
         ++it;
     }
-    // 保护机制：如果所有传感器都断开了，自动清屏并重置数据
     if (activeClients.empty())
     {
       Serial.println("[🧹 AUTO CLEAN] 所有外设已断开，自动清理屏幕残留");
@@ -143,8 +148,11 @@ void connectToSensor(NimBLEAddress addr)
   }
 
   activeClients.push_back(pClient);
+
+  // 接入新设备时默认切入数据展示面板
+  isSensorMode = true;
   isClockMode = false;
-  isSensorMode = true; // 只要连接成功就强制切换到数据展示面板
+  isTimerMode = false;
 
   NimBLERemoteService *pSvcHRM = pClient->getService(NimBLEUUID(UUID_HRM_SVC));
   if (pSvcHRM)
@@ -229,7 +237,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
 
     if (cmd == 0x01 && rxValue.length() >= 2)
     {
-      // 0x01: 设定亮度并立刻生效
       FastLED.setBrightness((uint8_t)rxValue[1]);
       FastLED.show();
       Serial.printf("[🔆 UI] 亮度调整为: %d\n", (uint8_t)rxValue[1]);
@@ -238,24 +245,23 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
     {
       fill_solid(leds, NUM_LEDS, CRGB(rxValue[1], rxValue[2], rxValue[3]));
       FastLED.show();
-      isSensorMode = isClockMode = false;
+      isSensorMode = isClockMode = isTimerMode = false;
     }
     else if (cmd == 0x03)
     {
-      // 0x03: 强制息屏 (Clear)
       FastLED.clear();
       FastLED.show();
-      isSensorMode = isClockMode = false;
+      isSensorMode = isClockMode = isTimerMode = false;
       Serial.println("[📺 UI] 屏幕已强制熄灭");
     }
     else if (cmd == 0x04 && rxValue.length() >= 5)
     {
-      // 0x04: 强制切换至时间面
       uint32_t ts = ((uint32_t)rxValue[1] << 24) | ((uint32_t)rxValue[2] << 16) | ((uint32_t)rxValue[3] << 8) | (uint32_t)rxValue[4];
       struct timeval tv = {.tv_sec = (time_t)ts, .tv_usec = 0};
       settimeofday(&tv, NULL);
       isClockMode = true;
       isSensorMode = false;
+      isTimerMode = false;
       Serial.println("[🕒 UI] 切换至时钟模式");
     }
     else if (cmd == 0x05)
@@ -276,10 +282,44 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
     }
     else if (cmd == 0x08)
     {
-      // 0x08: 强制切换至运动数据面
       isSensorMode = true;
       isClockMode = false;
+      isTimerMode = false;
       Serial.println("[🚴 UI] 切换至运动数据模式");
+    }
+    else if (cmd == 0x09)
+    {
+      isTimerMode = true;
+      isSensorMode = false;
+      isClockMode = false;
+      Serial.println("[⏱️ UI] 切换至计时器模式");
+    }
+    else if (cmd == 0x0A && rxValue.length() >= 2)
+    {
+      uint8_t action = rxValue[1];
+      if (action == 0x01 && !isTimerRunning)
+      { // 开始/恢复
+        timerStartTime = millis();
+        isTimerRunning = true;
+        // 自动切到计时面板
+        isTimerMode = true;
+        isSensorMode = false;
+        isClockMode = false;
+        Serial.println("[▶️ TIMER] 计时器开始/恢复");
+      }
+      else if (action == 0x00 && isTimerRunning)
+      { // 暂停
+        timerElapsed += millis() - timerStartTime;
+        isTimerRunning = false;
+        Serial.println("[⏸️ TIMER] 计时器暂停");
+      }
+      else if (action == 0x02)
+      { // 重置
+        timerElapsed = 0;
+        if (isTimerRunning)
+          timerStartTime = millis(); // 运行中重置则重新校准基准时间
+        Serial.println("[🔄 TIMER] 计时器已重置归零");
+      }
     }
   }
 };
@@ -289,7 +329,7 @@ void setup()
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n\n====================================");
-  Serial.println("🚀 Pixel-Box BLE Core (Display Overhaul)");
+  Serial.println("🚀 Pixel-Box BLE Core (Timer Integration)");
   Serial.println("====================================");
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
@@ -332,14 +372,13 @@ void loop()
       disconnectFromSensor(pendingAddr);
   }
 
-  // --- 实时静止踏频清零逻辑 ---
-  // 如果超过 3 秒没有收到新的曲柄时间戳，说明用户停止了踩踏
+  // 静止踏频清零逻辑
   if (millis() - lastCrankSysTime > 3000 && currentCadence != 0)
   {
     currentCadence = 0;
   }
 
-  // --- 画面渲染流 ---
+  // --- 画面渲染流分发 ---
   if (isClockMode)
   {
     static unsigned long lastUpdate = 0;
@@ -370,9 +409,8 @@ void loop()
     static unsigned long lastToggle = 0;
     static bool showHR = true;
 
-    // 如果只有一种设备有数据，固定显示该设备；如果两种都有，每 3 秒交替展示
     bool hasHR = (currentHR > 0);
-    bool hasCad = (currentCadence > 0 || !activeClients.empty()); // 如果有连接但还没数据，默认显示 0 踏频
+    bool hasCad = (currentCadence > 0 || !activeClients.empty());
 
     if (millis() - lastToggle > 3000)
     {
@@ -395,7 +433,7 @@ void loop()
       drawPixel(0, 2, CRGB::Red);
       drawPixel(1, 1, CRGB::Red);
       drawPixel(2, 2, CRGB::Red);
-      drawPixel(1, 3, CRGB::Red); // 心跳Icon
+      drawPixel(1, 3, CRGB::Red);
       if (currentHR >= 100)
         drawDigit(4, 1, currentHR / 100, CRGB::Red);
       drawDigit(8, 1, (currentHR / 10) % 10, CRGB::Red);
@@ -404,12 +442,10 @@ void loop()
     else
     {
     RENDER_CAD:
-      CRGB cadCol = CRGB(0, 255, 128); // 踏频极光绿
+      CRGB cadCol = CRGB(0, 255, 128);
       drawPixel(0, 6, cadCol);
       drawPixel(1, 5, cadCol);
-      drawPixel(0, 4, cadCol); // 简易踏板 Icon
-
-      // 居中渲染 1-3 位数字的踏频
+      drawPixel(0, 4, cadCol);
       if (currentCadence >= 100)
       {
         drawDigit(3, 1, (currentCadence / 100) % 10, cadCol);
@@ -423,12 +459,50 @@ void loop()
       }
       else
       {
-        drawDigit(7, 1, currentCadence % 10, cadCol); // 只有 1 位数（包括0）居中
+        drawDigit(7, 1, currentCadence % 10, cadCol);
       }
     }
-
     FastLED.show();
     delay(100);
+  }
+  else if (isTimerMode)
+  {
+    static unsigned long lastTimerUpdate = 0;
+    // 提升渲染率以保证秒数的流畅呈现
+    if (millis() - lastTimerUpdate >= 100)
+    {
+      lastTimerUpdate = millis();
+
+      unsigned long currentMs = timerElapsed;
+      if (isTimerRunning)
+      {
+        currentMs += (millis() - timerStartTime);
+      }
+
+      uint16_t totalSeconds = currentMs / 1000;
+      uint8_t mins = (totalSeconds / 60) % 100; // 封顶 99 分钟
+      uint8_t secs = totalSeconds % 60;
+
+      FastLED.clear();
+      CRGB tColor = CRGB(255, 150, 0); // 性能感爆棚的橙色
+
+      // 渲染 MM
+      drawDigit(0, 1, mins / 10, tColor);
+      drawDigit(4, 1, mins % 10, tColor);
+
+      // 运行状态下冒号闪烁，暂停状态下冒号常亮
+      if (!isTimerRunning || (millis() / 500) % 2 == 0)
+      {
+        drawPixel(7, 2, tColor);
+        drawPixel(7, 4, tColor);
+      }
+
+      // 渲染 SS
+      drawDigit(9, 1, secs / 10, tColor);
+      drawDigit(13, 1, secs % 10, tColor);
+
+      FastLED.show();
+    }
   }
   delay(10);
 }
