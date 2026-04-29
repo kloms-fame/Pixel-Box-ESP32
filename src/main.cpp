@@ -15,6 +15,7 @@ bool isClockMode = false;
 bool isSensorMode = false;
 bool isTimerMode = false;
 bool isCountdownMode = false;
+bool isAlarmMode = false;
 
 // 传感器数据缓存
 uint8_t currentHR = 0;
@@ -23,18 +24,29 @@ uint16_t lastCrankRevs = 0;
 uint16_t lastCrankTime = 0;
 unsigned long lastCrankSysTime = 0;
 
-// 秒表 (正向计时) 状态
+// 秒表与倒计时状态
 bool isTimerRunning = false;
 unsigned long timerStartTime = 0;
 unsigned long timerElapsed = 0;
-
-// 倒计时状态
 bool isCountdownRunning = false;
 bool isCountdownFinished = false;
 uint32_t countdownTotalSeconds = 0;
-uint32_t countdownRemaining = 0; // 剩余秒数
+uint32_t countdownRemaining = 0;
 unsigned long countdownStartSysTime = 0;
 unsigned long countdownFinishSysTime = 0;
+
+// 闹钟状态 (3组)
+struct AlarmData
+{
+  bool isSet = false;   // 是否被配置过
+  bool enabled = false; // 启用/禁用状态
+  uint8_t hour = 0;
+  uint8_t minute = 0;
+  bool isRinging = false; // 是否正在响铃
+  unsigned long ringStartSysTime = 0;
+};
+AlarmData alarms[3];
+uint8_t alarmDisplayIndex = 0; // 当前查看第几组闹钟 (0~2)
 
 // 已连接的外设客户端列表
 vector<NimBLEClient *> activeClients;
@@ -43,9 +55,20 @@ vector<NimBLEClient *> activeClients;
 volatile int pendingCmd = 0;
 NimBLEAddress pendingAddr;
 
-// 3x5 冷峻风像素字体
-static const uint8_t digits[10][5] = {
-    {0x07, 0x05, 0x05, 0x05, 0x07}, {0x01, 0x01, 0x01, 0x01, 0x01}, {0x07, 0x01, 0x07, 0x04, 0x07}, {0x07, 0x01, 0x07, 0x01, 0x07}, {0x05, 0x05, 0x07, 0x01, 0x01}, {0x07, 0x04, 0x07, 0x01, 0x07}, {0x07, 0x04, 0x07, 0x05, 0x07}, {0x07, 0x01, 0x01, 0x01, 0x01}, {0x07, 0x05, 0x07, 0x05, 0x07}, {0x07, 0x05, 0x07, 0x01, 0x07}};
+// 3x5 冷峻风像素字体 (扩容索引10: "-")
+static const uint8_t digits[11][5] = {
+    {0x07, 0x05, 0x05, 0x05, 0x07}, // 0
+    {0x01, 0x01, 0x01, 0x01, 0x01}, // 1
+    {0x07, 0x01, 0x07, 0x04, 0x07}, // 2
+    {0x07, 0x01, 0x07, 0x01, 0x07}, // 3
+    {0x05, 0x05, 0x07, 0x01, 0x01}, // 4
+    {0x07, 0x04, 0x07, 0x01, 0x07}, // 5
+    {0x07, 0x04, 0x07, 0x05, 0x07}, // 6
+    {0x07, 0x01, 0x01, 0x01, 0x01}, // 7
+    {0x07, 0x05, 0x07, 0x05, 0x07}, // 8
+    {0x07, 0x05, 0x07, 0x01, 0x07}, // 9
+    {0x00, 0x00, 0x07, 0x00, 0x00}  // 10 (-)
+};
 
 uint16_t getIndex(uint8_t x, uint8_t y)
 {
@@ -62,7 +85,7 @@ void drawPixel(int x, int y, CRGB color)
 
 void drawDigit(int x, int y, int digit, CRGB color)
 {
-  if (digit < 0 || digit > 9)
+  if (digit < 0 || digit > 10)
     return;
   for (int r = 0; r < 5; r++)
     for (int c = 0; c < 3; c++)
@@ -70,7 +93,7 @@ void drawDigit(int x, int y, int digit, CRGB color)
         drawPixel(x + c, y + r, color);
 }
 
-// ==================== 传感器解析回调 ====================
+// ==================== 传感器解析与生命周期 ====================
 void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, bool isNotify)
 {
   uint16_t charUUID = pChar->getUUID().getNative()->u16.value;
@@ -82,7 +105,6 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
       currentHR = pData[1] | (pData[2] << 8);
     else
       currentHR = pData[1];
-    Serial.printf("[❤ HRM PARSED] 心率更新: %d bpm\n", currentHR);
   }
   else if (charUUID == UUID_CSC_CHAR)
   {
@@ -99,7 +121,6 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
         uint16_t revsDiff = crankRevs - lastCrankRevs;
         currentCadence = (revsDiff * 60 * 1024) / timeDiff;
         lastCrankSysTime = millis();
-        Serial.printf("[🚴 CSC PARSED] 踏频更新: %d rpm\n", currentCadence);
       }
       lastCrankRevs = crankRevs;
       lastCrankTime = crankTime;
@@ -107,16 +128,11 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
   }
 }
 
-// ==================== 客户端连接生命周期回调 ====================
 class ClientCallbacks : public NimBLEClientCallbacks
 {
-  void onConnect(NimBLEClient *pClient) override
-  {
-    Serial.printf("[✅ CLIENT CONNECTED] 已连接设备: %s\n", pClient->getPeerAddress().toString().c_str());
-  }
+  void onConnect(NimBLEClient *pClient) override {}
   void onDisconnect(NimBLEClient *pClient) override
   {
-    Serial.printf("[❌ CLIENT DISCONNECTED] 设备断开: %s\n", pClient->getPeerAddress().toString().c_str());
     for (auto it = activeClients.begin(); it != activeClients.end();)
     {
       if (*it == pClient)
@@ -154,9 +170,7 @@ void connectToSensor(NimBLEAddress addr)
   activeClients.push_back(pClient);
 
   isSensorMode = true;
-  isClockMode = false;
-  isTimerMode = false;
-  isCountdownMode = false;
+  isClockMode = isTimerMode = isCountdownMode = isAlarmMode = false;
 
   NimBLERemoteService *pSvcHRM = pClient->getService(NimBLEUUID(UUID_HRM_SVC));
   if (pSvcHRM)
@@ -234,13 +248,13 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
     {
       fill_solid(leds, NUM_LEDS, CRGB(rxValue[1], rxValue[2], rxValue[3]));
       FastLED.show();
-      isSensorMode = isClockMode = isTimerMode = isCountdownMode = false;
+      isSensorMode = isClockMode = isTimerMode = isCountdownMode = isAlarmMode = false;
     }
     else if (cmd == 0x03)
     {
       FastLED.clear();
       FastLED.show();
-      isSensorMode = isClockMode = isTimerMode = isCountdownMode = false;
+      isSensorMode = isClockMode = isTimerMode = isCountdownMode = isAlarmMode = false;
     }
     else if (cmd == 0x04 && rxValue.length() >= 5)
     {
@@ -248,9 +262,7 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
       struct timeval tv = {.tv_sec = (time_t)ts, .tv_usec = 0};
       settimeofday(&tv, NULL);
       isClockMode = true;
-      isSensorMode = false;
-      isTimerMode = false;
-      isCountdownMode = false;
+      isSensorMode = isTimerMode = isCountdownMode = isAlarmMode = false;
     }
     else if (cmd == 0x05)
       pendingCmd = 5;
@@ -267,26 +279,22 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
     else if (cmd == 0x08)
     {
       isSensorMode = true;
-      isClockMode = false;
-      isTimerMode = false;
-      isCountdownMode = false;
+      isClockMode = isTimerMode = isCountdownMode = isAlarmMode = false;
     }
     else if (cmd == 0x09)
     {
       isTimerMode = true;
-      isSensorMode = false;
-      isClockMode = false;
-      isCountdownMode = false;
+      isSensorMode = isClockMode = isCountdownMode = isAlarmMode = false;
     }
     else if (cmd == 0x0A && rxValue.length() >= 2)
-    { // 正向秒表控制
+    {
       uint8_t action = rxValue[1];
       if (action == 0x01 && !isTimerRunning)
       {
         timerStartTime = millis();
         isTimerRunning = true;
         isTimerMode = true;
-        isSensorMode = isClockMode = isCountdownMode = false;
+        isSensorMode = isClockMode = isCountdownMode = isAlarmMode = false;
       }
       else if (action == 0x00 && isTimerRunning)
       {
@@ -295,7 +303,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
       }
       else if (action == 0x02)
       {
-        // 修复：重置归零后立即停止
         timerElapsed = 0;
         isTimerRunning = false;
       }
@@ -303,44 +310,66 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
     else if (cmd == 0x0B)
     {
       isCountdownMode = true;
-      isSensorMode = isClockMode = isTimerMode = false;
+      isSensorMode = isClockMode = isTimerMode = isAlarmMode = false;
     }
     else if (cmd == 0x0C && rxValue.length() >= 2)
-    { // 设定倒计时长
-      uint8_t mins = rxValue[1];
-      countdownTotalSeconds = mins * 60;
+    {
+      countdownTotalSeconds = rxValue[1] * 60;
       countdownRemaining = countdownTotalSeconds;
-      isCountdownRunning = false;
-      isCountdownFinished = false;
+      isCountdownRunning = isCountdownFinished = false;
       isCountdownMode = true;
-      isSensorMode = isClockMode = isTimerMode = false;
-      Serial.printf("[⏳ CDOWN] 倒计时设定: %d 分钟\n", mins);
+      isSensorMode = isClockMode = isTimerMode = isAlarmMode = false;
     }
     else if (cmd == 0x0D && rxValue.length() >= 2)
-    { // 倒计时动作控制
+    {
       uint8_t action = rxValue[1];
       if (action == 0x01 && !isCountdownRunning && countdownRemaining > 0)
-      { // 开始
+      {
         countdownStartSysTime = millis();
         isCountdownRunning = true;
         isCountdownFinished = false;
         isCountdownMode = true;
-        isSensorMode = isClockMode = isTimerMode = false;
-        Serial.println("[▶️ CDOWN] 倒计时开始");
+        isSensorMode = isClockMode = isTimerMode = isAlarmMode = false;
       }
       else if (action == 0x00 && isCountdownRunning)
-      { // 暂停
+      {
         uint32_t elapsed = (millis() - countdownStartSysTime) / 1000;
         countdownRemaining = (elapsed < countdownRemaining) ? (countdownRemaining - elapsed) : 0;
         isCountdownRunning = false;
-        Serial.println("[⏸️ CDOWN] 倒计时暂停");
       }
       else if (action == 0x02)
-      { // 重置
+      {
         countdownRemaining = countdownTotalSeconds;
-        isCountdownRunning = false;
-        isCountdownFinished = false;
-        Serial.println("[🔄 CDOWN] 倒计时重置暂停");
+        isCountdownRunning = isCountdownFinished = false;
+      }
+    }
+    else if (cmd == 0x0E)
+    {
+      // 0x0E: 闹钟循环切屏显示
+      if (isAlarmMode)
+      {
+        alarmDisplayIndex = (alarmDisplayIndex + 1) % 3;
+      }
+      else
+      {
+        isAlarmMode = true;
+        isSensorMode = isClockMode = isTimerMode = isCountdownMode = false;
+        alarmDisplayIndex = 0;
+      }
+      Serial.printf("[⏰ UI] 切至闹钟编排, 检视第 %d 组\n", alarmDisplayIndex + 1);
+    }
+    else if (cmd == 0x0F && rxValue.length() >= 5)
+    {
+      // 0x0F: 配置闹钟 [cmd, idx(0-2), enable, hour, min]
+      uint8_t idx = rxValue[1];
+      if (idx < 3)
+      {
+        alarms[idx].isSet = true;
+        alarms[idx].enabled = rxValue[2];
+        alarms[idx].hour = rxValue[3];
+        alarms[idx].minute = rxValue[4];
+        alarms[idx].isRinging = false;
+        Serial.printf("[⏰ SET] 闹钟 %d -> %02d:%02d [%s]\n", idx + 1, alarms[idx].hour, alarms[idx].minute, alarms[idx].enabled ? "ON" : "OFF");
       }
     }
   }
@@ -351,7 +380,7 @@ void setup()
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n\n====================================");
-  Serial.println("🚀 Pixel-Box BLE Core (Countdown Ver)");
+  Serial.println("🚀 Pixel-Box BLE Core (Alarm Clocks)");
   Serial.println("====================================");
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS);
@@ -374,6 +403,7 @@ void setup()
 
 void loop()
 {
+  // 1. 处理底层异步
   if (pendingCmd != 0)
   {
     int cmd = pendingCmd;
@@ -392,10 +422,36 @@ void loop()
       disconnectFromSensor(pendingAddr);
   }
 
+  // 获取系统时间以备后续计算
+  time_t now;
+  struct tm timeinfo;
+  time(&now);
+  localtime_r(&now, &timeinfo);
+
+  // 2. 闹钟后台触发守护进程
+  static int lastCheckedMinute = -1;
+  // tm_year > 100 意味着时间已被正确同步过(>2000年)
+  if (timeinfo.tm_year > 100 && timeinfo.tm_min != lastCheckedMinute)
+  {
+    lastCheckedMinute = timeinfo.tm_min;
+    for (int i = 0; i < 3; i++)
+    {
+      if (alarms[i].isSet && alarms[i].enabled && alarms[i].hour == timeinfo.tm_hour && alarms[i].minute == timeinfo.tm_min)
+      {
+        alarms[i].isRinging = true;
+        alarms[i].ringStartSysTime = millis();
+        // 强制霸占屏幕
+        isAlarmMode = true;
+        alarmDisplayIndex = i;
+        isSensorMode = isClockMode = isTimerMode = isCountdownMode = false;
+        Serial.printf("[⏰ FIRE] 闹钟 %d 时间到！强制唤醒\n", i + 1);
+      }
+    }
+  }
+
+  // 3. 踏频超时与倒计时守护
   if (millis() - lastCrankSysTime > 3000 && currentCadence != 0)
     currentCadence = 0;
-
-  // 全局守护: 计算倒计时是否在后台归零
   if (isCountdownRunning)
   {
     uint32_t elapsed = (millis() - countdownStartSysTime) / 1000;
@@ -405,25 +461,18 @@ void loop()
       isCountdownRunning = false;
       isCountdownFinished = true;
       countdownFinishSysTime = millis();
-      // 强制唤醒/强制切屏至倒计时提醒界面
       isCountdownMode = true;
-      isSensorMode = isClockMode = isTimerMode = false;
-      Serial.println("[⏰ CDOWN] 倒计时触发! 强行提醒");
+      isSensorMode = isClockMode = isTimerMode = isAlarmMode = false;
     }
   }
 
-  // --- 画面渲染流分发 ---
+  // ================= 渲染层 =================
   if (isClockMode)
   {
     static unsigned long lastUpdate = 0;
     if (millis() - lastUpdate >= 500)
     {
       lastUpdate = millis();
-      time_t now;
-      struct tm timeinfo;
-      time(&now);
-      localtime_r(&now, &timeinfo);
-
       FastLED.clear();
       CRGB color = CRGB(0, 180, 255);
       drawDigit(0, 1, timeinfo.tm_hour / 10, color);
@@ -510,7 +559,7 @@ void loop()
       uint8_t secs = totalSeconds % 60;
 
       FastLED.clear();
-      CRGB tColor = CRGB(255, 150, 0); // 橙色
+      CRGB tColor = CRGB(255, 150, 0);
       drawDigit(0, 1, mins / 10, tColor);
       drawDigit(4, 1, mins % 10, tColor);
       if (!isTimerRunning || (millis() / 500) % 2 == 0)
@@ -529,24 +578,21 @@ void loop()
     if (millis() - lastCDUpdate >= 100)
     {
       lastCDUpdate = millis();
-
       uint32_t currentRem = countdownRemaining;
       if (isCountdownRunning)
       {
         uint32_t elapsed = (millis() - countdownStartSysTime) / 1000;
         currentRem = (elapsed < countdownRemaining) ? (countdownRemaining - elapsed) : 0;
       }
-
       FastLED.clear();
-      CRGB cdColor = CRGB(180, 0, 255); // 赛博紫
+      CRGB cdColor = CRGB(180, 0, 255);
 
       if (isCountdownFinished)
       {
-        // 归零高频闪烁 10 秒
         if (millis() - countdownFinishSysTime <= 10000)
         {
           if ((millis() / 250) % 2 == 0)
-          { // 250ms 快闪
+          { // 250ms 快闪强光
             drawDigit(0, 1, 0, cdColor);
             drawDigit(4, 1, 0, cdColor);
             drawPixel(7, 2, cdColor);
@@ -557,7 +603,6 @@ void loop()
         }
         else
         {
-          // 闪烁结束常亮 00:00
           drawDigit(0, 1, 0, cdColor);
           drawDigit(4, 1, 0, cdColor);
           drawPixel(7, 2, cdColor);
@@ -579,6 +624,67 @@ void loop()
         }
         drawDigit(9, 1, secs / 10, cdColor);
         drawDigit(13, 1, secs % 10, cdColor);
+      }
+      FastLED.show();
+    }
+  }
+  else if (isAlarmMode)
+  {
+    static unsigned long lastAlmUpdate = 0;
+    if (millis() - lastAlmUpdate >= 100)
+    {
+      lastAlmUpdate = millis();
+      FastLED.clear();
+
+      AlarmData &al = alarms[alarmDisplayIndex];
+      CRGB color = al.enabled ? CRGB::Green : CRGB::Red;
+
+      if (al.isRinging)
+      {
+        if (millis() - al.ringStartSysTime <= 10000)
+        { // 闹钟也高频强光震慑 10秒
+          if ((millis() / 250) % 2 == 0)
+          {
+            drawDigit(0, 1, al.hour / 10, color);
+            drawDigit(4, 1, al.hour % 10, color);
+            drawPixel(7, 2, color);
+            drawPixel(7, 4, color);
+            drawDigit(9, 1, al.minute / 10, color);
+            drawDigit(13, 1, al.minute % 10, color);
+          }
+        }
+        else
+        {
+          al.isRinging = false; // 10秒后停止闪烁
+        }
+      }
+      else
+      {
+        // 常规检视态
+        if (!al.isSet)
+        {
+          drawDigit(0, 1, 10, color);
+          drawDigit(4, 1, 10, color); // 10对应 -
+          drawPixel(7, 2, color);
+          drawPixel(7, 4, color);
+          drawDigit(9, 1, 10, color);
+          drawDigit(13, 1, 10, color);
+        }
+        else
+        {
+          drawDigit(0, 1, al.hour / 10, color);
+          drawDigit(4, 1, al.hour % 10, color);
+          drawPixel(7, 2, color);
+          drawPixel(7, 4, color);
+          drawDigit(9, 1, al.minute / 10, color);
+          drawDigit(13, 1, al.minute % 10, color);
+        }
+
+        // 底部白点指示器：当前在看第几组闹钟
+        for (int i = 0; i <= alarmDisplayIndex; i++)
+        {
+          drawPixel(i * 2, 7, CRGB(128, 128, 128));
+        }
       }
       FastLED.show();
     }
