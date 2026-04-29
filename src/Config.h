@@ -5,6 +5,7 @@
 #include <string>
 #include <vector>
 
+// 保留全局命名空间指令，维持原有的开发习惯
 using namespace std;
 
 // ==================== 硬件与渲染配置 ====================
@@ -19,8 +20,8 @@ using namespace std;
 // ==================== BLE 网关协议配置 ====================
 #define BLE_DEVICE_NAME "Pixel-Box-Mini"
 #define SERVICE_UUID "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
-#define CHAR_RX_UUID "6e400003-b5a3-f393-e0a9-e50e24dcca9e" // Web -> ESP32
-#define CHAR_TX_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e" // ESP32 -> Web
+#define CHAR_RX_UUID "6e400003-b5a3-f393-e0a9-e50e24dcca9e"
+#define CHAR_TX_UUID "6e400004-b5a3-f393-e0a9-e50e24dcca9e"
 
 // ==================== 骑行传感器服务 UUID ====================
 #define UUID_HRM_SVC (uint16_t)0x180D
