@@ -280,11 +280,15 @@ void setup()
   Serial.begin(115200);
   AppState.begin();
 
+  // 🌟 修复：先初始化屏幕，点亮右上角黄色指示灯，表示正在配网校时
+  Display_Init();
+  Display_DrawPixel(15, 0, CRGB::Yellow);
+  Display_Show();
+
   // 【核心执行】：在蓝牙激活前，用开机的两秒钟闪电联网校时，随后抹除 WiFi 硬件状态！
   TimeSync_Init();
 
   NimBLEDevice::init(BLE_DEVICE_NAME);
-  Display_Init();
   WebGateway_Init();
   ButtonManager_Init();
   Serial.println("🚀 Pixel-Box OS Core Ready.");
@@ -318,6 +322,14 @@ void loop()
       SensorHub_TriggerAutoReconnect(true);
     else if (cmd == 99)
       AppState.factoryReset(); // 【新增】在安全的上下文环境中执行重置
+    else if (cmd == 11)
+      SensorHub_TriggerAutoReconnect(true, 1);
+    else if (cmd == 12)
+      SensorHub_TriggerAutoReconnect(true, 2);
+    else if (cmd == 13)
+      SensorHub_DisconnectType(1);
+    else if (cmd == 14)
+      SensorHub_DisconnectType(2);
   }
 
   // ================= 时间守护进程 =================

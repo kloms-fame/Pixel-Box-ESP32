@@ -8,6 +8,7 @@ std::vector<NimBLEClient *> activeClients;
 ScanCallbackFunc activeScanCb = nullptr;
 uint16_t lastCrankRevs = 0;
 uint16_t lastCrankTime = 0;
+uint8_t currentScanTarget = 0; // 0=全局, 1=心率, 2=踏频
 
 bool cachedHasHRM = false;
 bool cachedHasCSC = false;
@@ -119,7 +120,9 @@ class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
     void onResult(NimBLEAdvertisedDevice *device)
     {
         string mac = device->getAddress().toString();
-        if (AppState.autoReconnect)
+        bool matchHRM = (currentScanTarget == 0 || currentScanTarget == 1) && (mac == AppState.savedHrmMac);
+        bool matchCSC = (currentScanTarget == 0 || currentScanTarget == 2) && (mac == AppState.savedCscMac);
+        if (matchHRM || matchCSC)
         {
             if (mac == AppState.savedHrmMac || mac == AppState.savedCscMac)
             {
@@ -142,7 +145,6 @@ class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
 };
 AutoReconnectScanCallbacks autoScanCb;
 
-// 【核心微雕】：创建一个空的扫描结束回调，用于激活 NimBLE 的非阻塞扫描模式
 void scanEndedCB(NimBLEScanResults results)
 {
     NimBLEDevice::getScan()->clearResults();
@@ -155,21 +157,20 @@ void SensorHub_StartScan(ScanCallbackFunc cb)
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&proxyScanCb);
     pScan->setActiveScan(true);
-    // 【核心微雕】：传入 scanEndedCB，变为非阻塞模式，杜绝假死！
     pScan->start(5, scanEndedCB, false);
 }
 
-void SensorHub_TriggerAutoReconnect(bool force)
+void SensorHub_TriggerAutoReconnect(bool force, uint8_t targetType)
 {
     if (!force && !AppState.autoReconnect)
         return;
     if (AppState.savedHrmMac == "" && AppState.savedCscMac == "")
         return;
-    Serial.println("\n[🔍 AUTO-RECONNECT] 正在后台静默寻呼已知绑定设备...");
+
+    currentScanTarget = targetType;
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&autoScanCb);
     pScan->setActiveScan(true);
-    // 【核心微雕】：传入 scanEndedCB，变为非阻塞模式
     pScan->start(5, scanEndedCB, false);
 }
 
@@ -193,13 +194,9 @@ void SensorHub_Connect(NimBLEAddress addr)
     updateSensorCache();
 
     if (pSvcCSC != nullptr && pSvcHRM == nullptr)
-    {
         AppState.currentMode = MODE_SENSOR_CSC;
-    }
     else
-    {
         AppState.currentMode = MODE_SENSOR_HRM;
-    }
 
     Display_Clear();
     Display_Show();
@@ -219,14 +216,35 @@ void SensorHub_Connect(NimBLEAddress addr)
     }
 }
 
+// 🌟 核心修复：把丢失的 SensorHub_Disconnect 补回来了！
 void SensorHub_Disconnect(NimBLEAddress addr)
 {
-    for (auto pClient : activeClients)
+    Serial.printf("\n[✂️ DISCONNECT INIT] 强制切断 MAC: %s\n", addr.toString().c_str());
+    // 工业级防崩溃机制：创建迭代拷贝，防止在调用 disconnect() 瞬间触发 onDisconnect 回调修改原数组导致指针乱飞
+    auto clientsCopy = activeClients;
+    for (auto pClient : clientsCopy)
     {
         if (pClient->getPeerAddress() == addr)
         {
             pClient->disconnect();
-            return;
+            return; // 切断指定的设备后立即退出循环
+        }
+    }
+}
+
+void SensorHub_DisconnectType(uint8_t type)
+{
+    auto clientsCopy = activeClients;
+    for (auto pClient : clientsCopy)
+    {
+        if (pClient->isConnected())
+        {
+            bool isHRM = pClient->getService(NimBLEUUID(UUID_HRM_SVC)) != nullptr;
+            bool isCSC = pClient->getService(NimBLEUUID(UUID_CSC_SVC)) != nullptr;
+            if ((type == 1 && isHRM) || (type == 2 && isCSC))
+            {
+                pClient->disconnect();
+            }
         }
     }
 }

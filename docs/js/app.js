@@ -83,9 +83,7 @@ class PixelApp {
                     if (confirm("🧨 危险操作警告：\n\n这将会彻底擦除设备内所有的 NVS 存储记忆（包括所有闹钟、系统亮度、自动重连以及已绑定的骑行设备），并将设备重启！\n\n您确定要将设备恢复出厂设置吗？")) {
                         BLEManager.sendCmd([0xFF]);
                         UI.log("[SYS] 已下发恢复出厂设置指令，正在清理设备...");
-
                         setTimeout(() => { BLEManager.disconnect(); }, 500);
-
                         let countdown = 3;
                         const timer = setInterval(() => {
                             UI.log(`[SYS] 设备重启中，网页将在 ${countdown} 秒后自动刷新...`);
@@ -100,28 +98,20 @@ class PixelApp {
             };
         }
 
-        // ====== 【新增】WiFi 悬浮窗控制 ======
         const wifiModal = document.getElementById('wifiModal');
         const btnOpenWifi = document.getElementById('btnOpenWifi');
-        if (btnOpenWifi) {
-            btnOpenWifi.onclick = () => { wifiModal.style.display = 'flex'; };
-        }
-        if (document.getElementById('btnWifiClose')) {
-            document.getElementById('btnWifiClose').onclick = () => { wifiModal.style.display = 'none'; };
-        }
+        if (btnOpenWifi) btnOpenWifi.onclick = () => { wifiModal.style.display = 'flex'; };
+        if (document.getElementById('btnWifiClose')) document.getElementById('btnWifiClose').onclick = () => { wifiModal.style.display = 'none'; };
 
         if (document.getElementById('btnWifiSave')) {
             document.getElementById('btnWifiSave').onclick = async () => {
                 const ssid = document.getElementById('wifiSSID').value;
                 const pass = document.getElementById('wifiPass').value;
                 if (!ssid) { UI.log("ERR: SSID 不能为空"); return; }
-
-                // 封装协议: 0x20 + SSID长度 + SSID本身 + 密码长度 + 密码本身
                 const encoder = new TextEncoder();
                 const ssidArr = encoder.encode(ssid);
                 const passArr = encoder.encode(pass);
                 const payload = new Uint8Array([0x20, ssidArr.length, ...ssidArr, passArr.length, ...passArr]);
-
                 await BLEManager.sendCmd(Array.from(payload));
                 UI.log(`[NET] WiFi 配置已注入单片机 NVS -> [${ssid}]`);
                 wifiModal.style.display = 'none';
@@ -132,22 +122,18 @@ class PixelApp {
             try {
                 UI.log("NEGOTIATING HANDSHAKE...");
                 const name = await BLEManager.connect(this.handleRx.bind(this), this.handleDisconnect.bind(this));
-
                 UI.setConnectState(true);
                 document.getElementById('btnConnect').style.display = 'none';
-
                 const btnDisc = document.getElementById('btnDisconnect');
                 btnDisc.style.display = 'block';
                 btnDisc.disabled = false;
-
                 UI.log(`LINK_ESTABLISHED: ${name}，下发系统时间并请求配置...`);
 
-                const d = new Date();
-                const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
+                // 🌟 核心修复2：直接发送纯净的 UTC 标准时间戳，抛弃所有时区干扰！
+                const ts = Math.floor(Date.now() / 1000);
                 BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
 
                 setTimeout(() => BLEManager.sendCmd([0x10]), 500);
-                // 连接成功后请求 WiFi 配置
                 setTimeout(() => BLEManager.sendCmd([0x17]), 600);
 
             } catch (e) { UI.log(`ERR_CONNECT: ${e.message}`); }
@@ -173,10 +159,12 @@ class PixelApp {
         }
 
         document.getElementById('syncTimeBtn').onclick = () => {
-            const d = new Date(); const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
+            // 🌟 核心修复2：此处手动同步时间按钮同样使用纯净的 UTC
+            const ts = Math.floor(Date.now() / 1000);
             BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
             UI.log("CMD: SWAP_UI -> CLOCK_MODE");
         };
+
         document.getElementById('showDataBtn').onclick = () => { BLEManager.sendCmd([0x08]); UI.log("CMD: SWAP_UI -> SENSOR_DATA"); };
         document.getElementById('timerModeBtn').onclick = () => { BLEManager.sendCmd([0x09]); UI.log("CMD: SWAP_UI -> STOPWATCH"); };
         document.getElementById('countdownModeBtn').onclick = () => { BLEManager.sendCmd([0x0B]); UI.log("CMD: SWAP_UI -> COUNTDOWN"); };
@@ -269,7 +257,6 @@ class PixelApp {
             const macStr = macLen > 0 ? new TextDecoder().decode(v.slice(3, 3 + macLen)) : "";
             UI.updateNvsList(type, macStr);
         }
-        // 【新增】接收设备端 WiFi SSID 回显
         else if (cmd === 0x17) {
             const ssidLen = v[1];
             const ssid = ssidLen > 0 ? new TextDecoder().decode(v.slice(2, 2 + ssidLen)) : "";
@@ -290,7 +277,8 @@ window.AppTools = {
             const memPayload = [0x14, type];
             for (let i = 0; i < macStr.length; i++) memPayload.push(macStr.charCodeAt(i));
             BLEManager.sendCmd(memPayload);
-        }, 300);
+            UI.updateNvsList(type, macStr);
+        }, 1500);
 
         UI.log(`CMD: BINDING_ISSUED -> [${macStr}]`);
     },
@@ -305,6 +293,7 @@ window.AppTools = {
     async forgetDevice(type) {
         await BLEManager.sendCmd([0x15, type]);
         UI.log(`[SYS] 已向硬件发送擦除 NVS 请求: 节点 ${type}`);
+        UI.updateNvsList(type, "");
     }
 };
 

@@ -8,9 +8,6 @@
 
 NimBLECharacteristic *pTxCharacteristic = nullptr;
 
-// ============================================================================
-// 【核心修复】：新增 Web 服务器状态回调，解决断开后搜不到蓝牙的问题
-// ============================================================================
 class WebServerCallbacks : public NimBLEServerCallbacks
 {
     void onConnect(NimBLEServer *pServer) override
@@ -20,11 +17,9 @@ class WebServerCallbacks : public NimBLEServerCallbacks
     void onDisconnect(NimBLEServer *pServer) override
     {
         Serial.println("[🌐 WEB] 控制端已断开，正在重新启动蓝牙广播...");
-        // 关键：客户端断开后，必须手动重新开启广播，否则设备会“隐身”
         NimBLEDevice::startAdvertising();
     }
 };
-// ============================================================================
 
 class RxCallbacks : public NimBLECharacteristicCallbacks
 {
@@ -86,29 +81,20 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x08)
         {
-            // 【修改】：如果在运动模式就来回切，如果不在运动模式就智能进入已连接设备
             if (AppState.currentMode == MODE_SENSOR_HRM)
-            {
                 AppState.currentMode = MODE_SENSOR_CSC;
-            }
             else if (AppState.currentMode == MODE_SENSOR_CSC)
-            {
                 AppState.currentMode = MODE_SENSOR_HRM;
-            }
             else
             {
                 if (SensorHub_HasCSC() && !SensorHub_HasHRM())
-                {
                     AppState.currentMode = MODE_SENSOR_CSC;
-                }
                 else
-                {
                     AppState.currentMode = MODE_SENSOR_HRM;
-                }
             }
             Display_Clear();
             Display_Show();
-            WebGateway_BroadcastBasicState(); // 通知手机 UI 同步
+            WebGateway_BroadcastBasicState();
             Serial.println("[🚴 UI] 切换并进入运动数据面板");
         }
         else if (cmd == 0x09)
@@ -116,7 +102,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.currentMode = MODE_TIMER;
             Display_Clear();
             Display_Show();
-            Serial.println("[⏱️ UI] 秒表面板");
         }
         else if (cmd == 0x0A && rx.length() >= 2)
         {
@@ -143,7 +128,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.currentMode = MODE_COUNTDOWN;
             Display_Clear();
             Display_Show();
-            Serial.println("[⏳ UI] 倒计表面板");
         }
         else if (cmd == 0x0C && rx.length() >= 2)
         {
@@ -151,7 +135,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.countdownRemaining = AppState.countdownTotalSeconds;
             AppState.isCountdownRunning = AppState.isCountdownFinished = false;
             AppState.currentMode = MODE_COUNTDOWN;
-            Serial.printf("[⏳ CDOWN] 倒计时预设更新为: %d 分钟\n", rx[1]);
         }
         else if (cmd == 0x0D && rx.length() >= 2)
         {
@@ -186,7 +169,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             }
             Display_Clear();
             Display_Show();
-            Serial.printf("[⏰ UI] 切至硬件闹钟检视, 组别: %d\n", AppState.alarmDisplayIndex + 1);
         }
         else if (cmd == 0x0F && rx.length() >= 5)
         {
@@ -209,7 +191,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             }
             WebGateway_BroadcastSavedDevices();
 
-            // 【新增】：同步时，顺便把存在单片机里的 WiFi 名字推流回 Web 面板
             delay(50);
             std::vector<uint8_t> pW = {0x17, (uint8_t)AppState.wifiSSID.length()};
             for (char c : AppState.wifiSSID)
@@ -220,9 +201,24 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                 pTxCharacteristic->notify();
             }
         }
+        else if (cmd == 0x13 && rx.length() >= 2)
+        {
+            AppState.saveAutoReconnect(rx[1] == 1);
+        }
+        else if (cmd == 0x14 && rx.length() > 2)
+        {
+            // 🌟 修复：收到 NVS 写入指令后保存，并反向通知 UI 列表刷新！
+            AppState.saveSensorMac(rx[1], rx.substr(2));
+            WebGateway_BroadcastSavedDevices();
+        }
+        else if (cmd == 0x15 && rx.length() >= 2)
+        {
+            // 🌟 修复：处理前端发来的 "忘记设备" 请求，清除后通知 UI 刷新！
+            AppState.clearSensorMac(rx[1]);
+            WebGateway_BroadcastSavedDevices();
+        }
         else if (cmd == 0x20 && rx.length() >= 2)
         {
-            // 【新增】：极其严谨的防内存越界解析，接收配网数据
             size_t pos = 1;
             uint8_t ssidLen = rx[pos++];
             if (rx.length() >= pos + ssidLen)
@@ -244,7 +240,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0xFF)
         {
-            // 【核心修复】：严禁在蓝牙中断上下文直接重启设备，必须推入安全队列
             Serial.println("[🌐 WEB->ESP] 收到恢复出厂设置指令，加入主循环安全执行队列...");
             AppState.pendingCmd = 99;
         }
@@ -254,6 +249,7 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
 void WebGateway_Init()
 {
     NimBLEServer *pServer = NimBLEDevice::createServer();
+    pServer->setCallbacks(new WebServerCallbacks());
     NimBLEService *pService = pServer->createService(SERVICE_UUID);
     auto pRx = pService->createCharacteristic(CHAR_RX_UUID, NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_NR);
     pRx->setCallbacks(new RxCallbacks());
@@ -277,7 +273,6 @@ void WebGateway_SendScanResult(uint8_t type, uint8_t addrType, std::string macSt
     }
 }
 
-// 将物理按键导致的模式、亮度变更主动推流给 Web
 void WebGateway_BroadcastBasicState()
 {
     if (!pTxCharacteristic)
@@ -287,7 +282,6 @@ void WebGateway_BroadcastBasicState()
     pTxCharacteristic->notify();
 }
 
-// 将物理按键导致的倒计时配置主动推流给 Web
 void WebGateway_BroadcastCdownConfig()
 {
     if (!pTxCharacteristic)
@@ -298,7 +292,6 @@ void WebGateway_BroadcastCdownConfig()
     pTxCharacteristic->notify();
 }
 
-// 将物理按键启用/禁用的闹钟状态推流给 Web
 void WebGateway_BroadcastAlarmState(uint8_t idx)
 {
     if (!pTxCharacteristic)
@@ -309,13 +302,11 @@ void WebGateway_BroadcastAlarmState(uint8_t idx)
     pTxCharacteristic->notify();
 }
 
-// 【新增实现】将 NVS 内部存储的设备情况编码为 0x16 推送给前端
 void WebGateway_BroadcastSavedDevices()
 {
     if (!pTxCharacteristic)
         return;
 
-    // 心率 (Type 1)
     std::string macH = AppState.savedHrmMac;
     std::vector<uint8_t> pH = {0x16, 1, (uint8_t)macH.length()};
     for (char c : macH)
@@ -324,7 +315,6 @@ void WebGateway_BroadcastSavedDevices()
     pTxCharacteristic->notify();
     delay(20);
 
-    // 踏频 (Type 2)
     std::string macC = AppState.savedCscMac;
     std::vector<uint8_t> pC = {0x16, 2, (uint8_t)macC.length()};
     for (char c : macC)

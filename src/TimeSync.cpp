@@ -5,6 +5,10 @@
 
 void TimeSync_Init()
 {
+    // 🌟 核心修复1：无论是否配置了 WiFi，开机第一件事必须确立全局时区（东八区）
+    // 这样底层的 localtime_r() 永远会统一、标准地 +8 小时
+    configTime(8 * 3600, 0, "ntp.aliyun.com", "ntp.tencent.com", "pool.ntp.org");
+
     if (AppState.wifiSSID == "")
     {
         Serial.println("[🌐 NTP] 未配置 WiFi，跳过自动校时");
@@ -32,8 +36,6 @@ void TimeSync_Init()
     if (WiFi.status() == WL_CONNECTED)
     {
         Serial.println("\n[✅ WiFi] 成功接入网络，正在获取标准时间...");
-        // 设置 NTP（中国时区 UTC+8，优先使用阿里云和腾讯云）
-        configTime(8 * 3600, 0, "ntp.aliyun.com", "ntp.tencent.com", "pool.ntp.org");
 
         // 最长等待 5 秒获取时间
         struct tm timeinfo;

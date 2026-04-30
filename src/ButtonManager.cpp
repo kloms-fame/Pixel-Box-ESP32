@@ -180,9 +180,13 @@ void onOkClick()
     if (checkAndDismissAlerts())
         return;
 
-    if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
+    if (AppState.currentMode == MODE_SENSOR_HRM)
     {
-        AppState.pendingCmd = 10;
+        AppState.pendingCmd = 11; // 仅寻呼心率
+    }
+    else if (AppState.currentMode == MODE_SENSOR_CSC)
+    {
+        AppState.pendingCmd = 12; // 仅寻呼踏频
     }
     else if (AppState.currentMode == MODE_TIMER)
     {
@@ -229,12 +233,13 @@ void onOkLongPress()
     if (checkAndDismissAlerts())
         return;
 
-    if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
+    if (AppState.currentMode == MODE_SENSOR_HRM)
     {
-        if (SensorHub_GetActiveClientCount() > 0)
-        {
-            AppState.pendingCmd = 9;
-        }
+        AppState.pendingCmd = 13; // 仅断开心率
+    }
+    else if (AppState.currentMode == MODE_SENSOR_CSC)
+    {
+        AppState.pendingCmd = 14; // 仅断开踏频
     }
     else if (AppState.currentMode == MODE_TIMER)
     {
