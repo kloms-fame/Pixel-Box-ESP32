@@ -69,6 +69,27 @@ class PixelApp {
     }
 
     bindEvents() {
+        // ====== 【核心修复】：隐藏彩蛋：恢复出厂设置 ======
+        // 连续点击顶部大标题 5 次触发
+        const brandTitle = document.getElementById('brandTitle');
+        if (brandTitle) {
+            let clickCount = 0;
+            let clickTimer = null;
+            brandTitle.onclick = () => {
+                clickCount++;
+                if (clickCount === 1) {
+                    clickTimer = setTimeout(() => { clickCount = 0; }, 2000);
+                } else if (clickCount >= 5) {
+                    clearTimeout(clickTimer);
+                    clickCount = 0;
+                    if (confirm("🧨 危险操作警告：\n\n这将会彻底擦除设备内所有的 NVS 存储记忆（包括所有闹钟、系统亮度、自动重连以及已绑定的骑行设备），并将设备重启！\n\n您确定要将设备恢复出厂设置吗？")) {
+                        BLEManager.sendCmd([0xFF]);
+                        UI.log("[SYS] 已下发恢复出厂设置指令，设备即将切断连接并重启...");
+                    }
+                }
+            };
+        }
+
         document.getElementById('btnConnect').onclick = async () => {
             try {
                 UI.log("NEGOTIATING HANDSHAKE...");
@@ -211,7 +232,6 @@ class PixelApp {
     }
 }
 
-// 全局暴露给 HTML 的 onclick 调用
 window.AppTools = {
     async bindDevice(addrType, macStr, type) {
         const payload = [0x06, addrType];

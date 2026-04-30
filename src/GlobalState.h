@@ -52,6 +52,7 @@ public:
     void saveAlarm(uint8_t idx, bool enabled, uint8_t h, uint8_t m);
     void saveSensorMac(uint8_t type, string mac);
     void clearSensorMac(uint8_t type); // 【新增】清除特定类型的 NVS 记忆
+    void factoryReset();               // 【新增】恢复出厂设置
 
     // === 易失性运行状态 (Volatile) ===
     AppMode currentMode = MODE_CLOCK;

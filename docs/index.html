@@ -17,7 +17,8 @@
 
     <header class="app-header">
         <div style="display: flex; align-items: center; gap: 8px;">
-            <h1>Pixel-Box <span style="color:var(--text-muted); font-size: 12px;">OS_CORE</span></h1>
+            <h1 id="brandTitle" style="cursor: pointer; user-select: none; -webkit-user-select: none;">Pixel-Box <span
+                    style="color:var(--text-muted); font-size: 12px;">V18_PRO</span></h1>
             <span id="pwaBadge"
                 style="display:none; background:var(--success); color:#000; font-size:9px; padding:2px 6px; border-radius:4px; font-weight:bold;">PWA</span>
         </div>
@@ -63,7 +64,7 @@
             <h2>[ SYS_UI ] 视效集群分发</h2>
             <div class="slider-container">
                 <label>🔆 屏幕亮度:</label>
-                <input type="range" id="brightSlider" class="ctrl-btn" min="0" max="255" value="30" disabled>
+                <input type="range" id="brightSlider" class="ctrl-btn" min="5" max="255" value="30" disabled>
                 <span id="brightVal" style="width: 24px; text-align: right;">30</span>
             </div>
             <div class="slider-container" style="justify-content: space-between;">

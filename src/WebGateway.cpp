@@ -208,6 +208,12 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.clearSensorMac(rx[1]);
             WebGateway_BroadcastSavedDevices(); // 删完立刻刷新 Web
         }
+        else if (cmd == 0xFF)
+        {
+            // 【新增】处理恢复出厂设置
+            Serial.println("[🌐 WEB->ESP] 收到系统最高级指令：恢复出厂设置");
+            AppState.factoryReset();
+        }
     }
 };
 

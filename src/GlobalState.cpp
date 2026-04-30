@@ -81,3 +81,13 @@ void AppStateManager::clearSensorMac(uint8_t type)
         Serial.println("[💾 NVS] 已手动清除踏频器 MAC 记忆");
     }
 }
+
+// 【新增实现】：核弹级恢复出厂设置
+void AppStateManager::factoryReset()
+{
+    Serial.println("\n[🧨 FACTORY RESET] 收到出厂重置指令，正在擦除 NVS 存储...");
+    prefs.clear(); // 彻底清空当前 namespace 下的所有键值对
+    Serial.println("[🧨 FACTORY RESET] 擦除完成，系统将在 1 秒后自动重启.");
+    delay(1000);
+    ESP.restart(); // 硬件软重启
+}
