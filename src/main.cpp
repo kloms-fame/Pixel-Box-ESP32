@@ -94,6 +94,10 @@ void renderSensor()
       Display_DrawDigit(7, 1, cad % 10, c);
     }
   }
+
+  CRGB statusColor = (SensorHub_GetActiveClientCount() > 0) ? CRGB::Green : CRGB::Red;
+  Display_DrawPixel(15, 0, statusColor);
+
   Display_Show();
 }
 
@@ -277,7 +281,11 @@ void loop()
     else if (cmd == 7)
       SensorHub_Disconnect(AppState.pendingAddr);
     else if (cmd == 8)
-      SensorHub_TriggerAutoReconnect(); // 异步执行开机自动重连
+      SensorHub_TriggerAutoReconnect(false); // 开机自动执行 (如果不允许则跳过)
+    else if (cmd == 9)
+      SensorHub_DisconnectAll(); // OK按键强制一键断开所有
+    else if (cmd == 10)
+      SensorHub_TriggerAutoReconnect(true); // OK按键强行执行一键搜寻直连
   }
 
   // ================= 时间守护进程 =================

@@ -193,3 +193,34 @@ void SensorHub_Disconnect(NimBLEAddress addr)
 }
 
 int SensorHub_GetActiveClientCount() { return activeClients.size(); }
+// ... 前面的代码不变 ...
+
+void SensorHub_DisconnectAll()
+{
+    Serial.println("\n[✂️ DISCONNECT ALL] 执行强制断开所有外设链路");
+    for (auto pClient : activeClients)
+    {
+        pClient->disconnect();
+    }
+}
+
+void SensorHub_TriggerAutoReconnect(bool force)
+{
+    // 如果不是强行触发且自动重连关闭了，就跳过
+    if (!force && !AppState.autoReconnect)
+    {
+        Serial.println("[⏭️ AUTO-RECONNECT] 未开启自动重连，跳过.");
+        return;
+    }
+    if (AppState.savedHrmMac == "" && AppState.savedCscMac == "")
+    {
+        Serial.println("[⏭️ AUTO-RECONNECT] 数据库无历史设备记忆，无法直连.");
+        return;
+    }
+    Serial.println("\n[🔍 AUTO-RECONNECT] 正在后台寻呼已知绑定设备...");
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    pScan->setAdvertisedDeviceCallbacks(&autoScanCb);
+    pScan->setActiveScan(true);
+    pScan->start(5, false);
+    pScan->clearResults();
+}
