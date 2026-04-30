@@ -24,43 +24,47 @@ class PixelApp {
             e.preventDefault();
             deferredPrompt = e;
             const installBanner = document.getElementById('pwaInstallBanner');
-            installBanner.style.display = 'flex';
+            if (installBanner) installBanner.style.display = 'flex';
 
-            document.getElementById('btnInstallPWA').onclick = async () => {
-                installBanner.style.display = 'none';
-                deferredPrompt.prompt();
-                const { outcome } = await deferredPrompt.userChoice;
-                if (outcome === 'accepted') {
-                    UI.log("[PWA] 应用安装成功，请去桌面查看");
-                }
-                deferredPrompt = null;
-            };
+            const btnInstall = document.getElementById('btnInstallPWA');
+            if (btnInstall) {
+                btnInstall.onclick = async () => {
+                    installBanner.style.display = 'none';
+                    deferredPrompt.prompt();
+                    const { outcome } = await deferredPrompt.userChoice;
+                    if (outcome === 'accepted') UI.log("[PWA] 应用安装成功，请去桌面查看");
+                    deferredPrompt = null;
+                };
+            }
         });
 
         const isIos = () => /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
         if (isIos() && !isInStandaloneMode()) {
-            document.getElementById('iosInstallHint').style.display = 'block';
+            const iosHint = document.getElementById('iosInstallHint');
+            if (iosHint) iosHint.style.display = 'block';
         }
     }
 
     initDOM() {
         const container = document.getElementById('alarmContainer');
-        container.innerHTML = '';
-        for (let i = 0; i < 3; i++) {
-            container.innerHTML += `
-        <div class="list-item" style="background:#000; padding:12px; border-radius:4px; margin-bottom:8px; border:1px solid var(--border);">
-          <div style="display:flex; flex-direction:column; gap:8px;">
-            <span style="font-weight:bold; color:var(--text-main);">ALM_NODE_${i + 1}</span>
-            <input type="time" id="almTime${i}" class="ctrl-btn" disabled>
-          </div>
-          <div style="display: flex; gap: 12px; align-items: center;">
-            <label class="toggle-switch">
-              <input type="checkbox" id="almEn${i}" class="ctrl-btn" disabled>
-              <span class="slider-round"></span>
-            </label>
-            <button id="almBtn${i}" class="btn-success ctrl-btn" disabled style="margin: 0; flex-grow:0; padding:6px 12px;">注入配置</button>
-          </div>
-        </div>`;
+        if (container) {
+            container.innerHTML = '';
+            for (let i = 0; i < 3; i++) {
+                container.innerHTML += `
+          <div class="list-item" style="background:#000; padding:12px; border-radius:4px; margin-bottom:8px; border:1px solid var(--border);">
+            <div style="display:flex; flex-direction:column; gap:8px;">
+              <span style="font-weight:bold; color:var(--text-main);">ALM_NODE_${i + 1}</span>
+              <input type="time" id="almTime${i}" class="ctrl-btn" disabled>
+            </div>
+            <div style="display: flex; gap: 12px; align-items: center;">
+              <label class="toggle-switch">
+                <input type="checkbox" id="almEn${i}" class="ctrl-btn" disabled>
+                <span class="slider-round"></span>
+              </label>
+              <button id="almBtn${i}" class="btn-success ctrl-btn" disabled style="margin: 0; flex-grow:0; padding:6px 12px;">注入配置</button>
+            </div>
+          </div>`;
+            }
         }
     }
 
@@ -79,12 +83,10 @@ class PixelApp {
 
                 UI.log(`LINK_ESTABLISHED: ${name}，下发系统时间并请求配置...`);
 
-                // 【核心修改】：连接成功的瞬间，全自动下发手机时间进行校准
                 const d = new Date();
                 const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
                 BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
 
-                // 延迟半秒拉取 NVS 快照
                 setTimeout(() => BLEManager.sendCmd([0x10]), 500);
 
             } catch (e) { UI.log(`ERR_CONNECT: ${e.message}`); }
@@ -93,16 +95,21 @@ class PixelApp {
         document.getElementById('btnDisconnect').onclick = () => BLEManager.disconnect();
 
         const brightSlider = document.getElementById('brightSlider');
-        brightSlider.oninput = (e) => document.getElementById('brightVal').innerText = e.target.value;
-        brightSlider.onchange = (e) => {
-            BLEManager.sendCmd([0x01, parseInt(e.target.value)]);
-            UI.log(`CMD: BRIGHTNESS_SET_TO -> ${e.target.value}`);
-        };
+        if (brightSlider) {
+            brightSlider.oninput = (e) => document.getElementById('brightVal').innerText = e.target.value;
+            brightSlider.onchange = (e) => {
+                BLEManager.sendCmd([0x01, parseInt(e.target.value)]);
+                UI.log(`CMD: BRIGHTNESS_SET_TO -> ${e.target.value}`);
+            };
+        }
 
-        document.getElementById('autoRecEn').onchange = (e) => {
-            BLEManager.sendCmd([0x13, e.target.checked ? 1 : 0]);
-            UI.log(`CMD: AUTO_RECONNECT -> ${e.target.checked ? 'ENABLED' : 'DISABLED'}`);
-        };
+        const autoRecEn = document.getElementById('autoRecEn');
+        if (autoRecEn) {
+            autoRecEn.onchange = (e) => {
+                BLEManager.sendCmd([0x13, e.target.checked ? 1 : 0]);
+                UI.log(`CMD: AUTO_RECONNECT -> ${e.target.checked ? 'ENABLED' : 'DISABLED'}`);
+            };
+        }
 
         document.getElementById('syncTimeBtn').onclick = () => {
             const d = new Date(); const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
@@ -122,14 +129,17 @@ class PixelApp {
         };
 
         for (let i = 0; i < 3; i++) {
-            document.getElementById(`almBtn${i}`).onclick = () => {
-                const timeVal = document.getElementById(`almTime${i}`).value;
-                const enabled = document.getElementById(`almEn${i}`).checked ? 1 : 0;
-                if (!timeVal) { UI.log(`ERR: 第 ${i + 1} 组未配置时间!`); return; }
-                const [h, m] = timeVal.split(':').map(Number);
-                BLEManager.sendCmd([0x0F, i, enabled, h, m]);
-                UI.log(`CMD: ALARM_SET -> IDX:${i + 1} TIME:${timeVal} EN:${enabled}`);
-            };
+            const almBtn = document.getElementById(`almBtn${i}`);
+            if (almBtn) {
+                almBtn.onclick = () => {
+                    const timeVal = document.getElementById(`almTime${i}`).value;
+                    const enabled = document.getElementById(`almEn${i}`).checked ? 1 : 0;
+                    if (!timeVal) { UI.log(`ERR: 第 ${i + 1} 组未配置时间!`); return; }
+                    const [h, m] = timeVal.split(':').map(Number);
+                    BLEManager.sendCmd([0x0F, i, enabled, h, m]);
+                    UI.log(`CMD: ALARM_SET -> IDX:${i + 1} TIME:${timeVal} EN:${enabled}`);
+                };
+            }
         }
 
         document.getElementById('timerStartBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x01]); UI.log("CMD: STOPWATCH -> RUN"); };
@@ -137,8 +147,11 @@ class PixelApp {
         document.getElementById('timerResetBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x02]); UI.log("CMD: STOPWATCH -> RESET"); };
 
         const cdSlider = document.getElementById('cdSlider');
-        cdSlider.oninput = (e) => document.getElementById('cdVal').innerText = e.target.value + ' 分钟';
-        document.getElementById('cdApplyBtn').onclick = () => { BLEManager.sendCmd([0x0C, parseInt(cdSlider.value)]); UI.log(`CMD: CDOWN_CFG -> ${cdSlider.value} MINS`); };
+        if (cdSlider) {
+            cdSlider.oninput = (e) => document.getElementById('cdVal').innerText = e.target.value + ' 分钟';
+            document.getElementById('cdApplyBtn').onclick = () => { BLEManager.sendCmd([0x0C, parseInt(cdSlider.value)]); UI.log(`CMD: CDOWN_CFG -> ${cdSlider.value} MINS`); };
+        }
+
         document.getElementById('cdStartBtn').onclick = () => { BLEManager.sendCmd([0x0D, 0x01]); UI.log("CMD: COUNTDOWN -> RUN"); };
         document.getElementById('cdPauseBtn').onclick = () => { BLEManager.sendCmd([0x0D, 0x00]); UI.log("CMD: COUNTDOWN -> PAUSE"); };
         document.getElementById('cdResetBtn').onclick = () => { BLEManager.sendCmd([0x0D, 0x02]); UI.log("CMD: COUNTDOWN -> RESET"); };
@@ -183,12 +196,23 @@ class PixelApp {
         else if (cmd === 0x12) {
             const mins = v[1];
             const slCd = document.getElementById('cdSlider');
-            slCd.value = mins;
-            document.getElementById('cdVal').innerText = mins + ' 分钟';
-            UI.log(`[SYNC] 硬件按键触发 -> 倒计时已变更为 ${mins} 分钟`);
+            if (slCd) {
+                slCd.value = mins;
+                document.getElementById('cdVal').innerText = mins + ' 分钟';
+                UI.log(`[SYNC] 硬件按键触发 -> 倒计时已变更为 ${mins} 分钟`);
+            }
+        }
+        else if (cmd === 0x16) {
+            const type = v[1];
+            const macLen = v[2];
+            const macStr = macLen > 0 ? new TextDecoder().decode(v.slice(3, 3 + macLen)) : "";
+            UI.updateNvsList(type, macStr);
         }
     }
+}
 
+// 全局暴露给 HTML 的 onclick 调用
+window.AppTools = {
     async bindDevice(addrType, macStr, type) {
         const payload = [0x06, addrType];
         for (let i = 0; i < macStr.length; i++) payload.push(macStr.charCodeAt(i));
@@ -201,14 +225,19 @@ class PixelApp {
         }, 300);
 
         UI.log(`CMD: BINDING_ISSUED -> [${macStr}]`);
-    }
+    },
 
     async dropDevice(addrType, macStr) {
         const payload = [0x07, addrType];
         for (let i = 0; i < macStr.length; i++) payload.push(macStr.charCodeAt(i));
         await BLEManager.sendCmd(payload);
         UI.log(`CMD: DROP_ISSUED -> [${macStr}]`);
+    },
+
+    async forgetDevice(type) {
+        await BLEManager.sendCmd([0x15, type]);
+        UI.log(`[SYS] 已向硬件发送擦除 NVS 请求: 节点 ${type}`);
     }
-}
+};
 
 window.onload = () => { window.AppController = new PixelApp(); };

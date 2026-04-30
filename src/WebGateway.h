@@ -10,3 +10,4 @@ void WebGateway_SendScanResult(uint8_t type, uint8_t addrType, std::string macSt
 void WebGateway_BroadcastBasicState();
 void WebGateway_BroadcastCdownConfig();
 void WebGateway_BroadcastAlarmState(uint8_t idx);
+void WebGateway_BroadcastSavedDevices(); // 【新增】广播 NVS 已存设备

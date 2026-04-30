@@ -160,24 +160,18 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x10)
         {
-            Serial.println("[🤝 SYNC] Web建立连接，推送系统状态快照...");
-            vector<uint8_t> p1 = {0x10, (uint8_t)AppState.currentMode, AppState.brightness, (uint8_t)(AppState.autoReconnect ? 1 : 0)};
-            pTxCharacteristic->setValue(p1.data(), p1.size());
-            pTxCharacteristic->notify();
+            // 【修改】握手同步时，原本使用 ScanResult 发送，现在统一用 0x16 专用包
+            Serial.println("[🤝 SYNC] Web请求快照，下发系统状态及设备记忆...");
+            WebGateway_BroadcastBasicState();
             delay(50);
             for (int i = 0; i < 3; i++)
             {
-                AlarmData &a = AppState.alarms[i];
-                // 解决窄化转换警告
-                vector<uint8_t> p2 = {0x11, (uint8_t)i, (uint8_t)(a.isSet ? 1 : 0), (uint8_t)(a.enabled ? 1 : 0), a.hour, a.minute};
-                pTxCharacteristic->setValue(p2.data(), p2.size());
-                pTxCharacteristic->notify();
+                WebGateway_BroadcastAlarmState(i);
                 delay(50);
             }
-            if (AppState.savedHrmMac != "")
-                WebGateway_SendScanResult(1, 0, AppState.savedHrmMac, "NVS_已存心率");
-            if (AppState.savedCscMac != "")
-                WebGateway_SendScanResult(2, 0, AppState.savedCscMac, "NVS_已存踏频");
+
+            // 下发 NVS 存储的设备
+            WebGateway_BroadcastSavedDevices();
         }
         else if (cmd == 0x13 && rx.length() >= 2)
         {
@@ -186,6 +180,12 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         else if (cmd == 0x14 && rx.length() > 2)
         {
             AppState.saveSensorMac(rx[1], rx.substr(2));
+            WebGateway_BroadcastSavedDevices(); // 存完立刻刷新 Web
+        }
+        else if (cmd == 0x15 && rx.length() >= 2)
+        { // 【新增】0x15: 删除 NVS 记忆包
+            AppState.clearSensorMac(rx[1]);
+            WebGateway_BroadcastSavedDevices(); // 删完立刻刷新 Web
         }
     }
 };
@@ -245,5 +245,29 @@ void WebGateway_BroadcastAlarmState(uint8_t idx)
     AlarmData &a = AppState.alarms[idx];
     std::vector<uint8_t> p = {0x11, idx, (uint8_t)(a.isSet ? 1 : 0), (uint8_t)(a.enabled ? 1 : 0), a.hour, a.minute};
     pTxCharacteristic->setValue(p.data(), p.size());
+    pTxCharacteristic->notify();
+}
+
+// 【新增实现】将 NVS 内部存储的设备情况编码为 0x16 推送给前端
+void WebGateway_BroadcastSavedDevices()
+{
+    if (!pTxCharacteristic)
+        return;
+
+    // 心率 (Type 1)
+    std::string macH = AppState.savedHrmMac;
+    std::vector<uint8_t> pH = {0x16, 1, (uint8_t)macH.length()};
+    for (char c : macH)
+        pH.push_back(c);
+    pTxCharacteristic->setValue(pH.data(), pH.size());
+    pTxCharacteristic->notify();
+    delay(20);
+
+    // 踏频 (Type 2)
+    std::string macC = AppState.savedCscMac;
+    std::vector<uint8_t> pC = {0x16, 2, (uint8_t)macC.length()};
+    for (char c : macC)
+        pC.push_back(c);
+    pTxCharacteristic->setValue(pC.data(), pC.size());
     pTxCharacteristic->notify();
 }

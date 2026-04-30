@@ -75,5 +75,11 @@ class TimeController {
             valCd.innerText = mins + ' 分钟';
             UI.log(`[SYNC] 硬件按键下发 -> 倒数预设已变更为 ${mins} 分钟`);
         }
+        // 【新增】NVS 管理控制器
+        class NvsController {
+            updateDevice(type, mac) {
+                UI.updateNvsList(type, mac);
+            }
+        }
     }
 }

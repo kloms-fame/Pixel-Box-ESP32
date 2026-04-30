@@ -65,3 +65,19 @@ void AppStateManager::saveAlarm(uint8_t idx, bool enabled, uint8_t h, uint8_t m)
     prefs.putUChar((prefix + "_m").c_str(), m);
     Serial.printf("[💾 NVS] 闹钟 %d 配置已保存\n", idx + 1);
 }
+
+void AppStateManager::clearSensorMac(uint8_t type)
+{
+    if (type == 1)
+    {
+        savedHrmMac = "";
+        prefs.putString("macHrm", "");
+        Serial.println("[💾 NVS] 已手动清除心率带 MAC 记忆");
+    }
+    else if (type == 2)
+    {
+        savedCscMac = "";
+        prefs.putString("macCsc", "");
+        Serial.println("[💾 NVS] 已手动清除踏频器 MAC 记忆");
+    }
+}
