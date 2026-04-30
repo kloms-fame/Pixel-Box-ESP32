@@ -8,6 +8,24 @@
 
 NimBLECharacteristic *pTxCharacteristic = nullptr;
 
+// ============================================================================
+// 【核心修复】：新增 Web 服务器状态回调，解决断开后搜不到蓝牙的问题
+// ============================================================================
+class WebServerCallbacks : public NimBLEServerCallbacks
+{
+    void onConnect(NimBLEServer *pServer) override
+    {
+        Serial.println("[🌐 WEB] 控制端已接入");
+    }
+    void onDisconnect(NimBLEServer *pServer) override
+    {
+        Serial.println("[🌐 WEB] 控制端已断开，正在重新启动蓝牙广播...");
+        // 关键：客户端断开后，必须手动重新开启广播，否则设备会“隐身”
+        NimBLEDevice::startAdvertising();
+    }
+};
+// ============================================================================
+
 class RxCallbacks : public NimBLECharacteristicCallbacks
 {
     void onWrite(NimBLECharacteristic *pChar)
