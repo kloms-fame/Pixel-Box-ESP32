@@ -263,7 +263,6 @@ void setup()
 
 void loop()
 {
-  // 【修复 2】必须在主循环调用，按键才能实时响应
   ButtonManager_Loop();
 
   // ================= 异步任务队列 =================
@@ -281,11 +280,11 @@ void loop()
     else if (cmd == 7)
       SensorHub_Disconnect(AppState.pendingAddr);
     else if (cmd == 8)
-      SensorHub_TriggerAutoReconnect(false); // 开机自动执行 (如果不允许则跳过)
+      SensorHub_TriggerAutoReconnect(false);
     else if (cmd == 9)
-      SensorHub_DisconnectAll(); // OK按键强制一键断开所有
+      SensorHub_DisconnectAll();
     else if (cmd == 10)
-      SensorHub_TriggerAutoReconnect(true); // OK按键强行执行一键搜寻直连
+      SensorHub_TriggerAutoReconnect(true);
   }
 
   // ================= 时间守护进程 =================
@@ -304,6 +303,9 @@ void loop()
       {
         AppState.alarms[i].isRinging = true;
         AppState.alarms[i].ringStartSysTime = millis();
+        // 【新增】：如果不在闹钟界面，记录原界面
+        if (AppState.currentMode != MODE_ALARM)
+          AppState.previousMode = AppState.currentMode;
         AppState.currentMode = MODE_ALARM;
         AppState.alarmDisplayIndex = i;
         Serial.printf("[⏰ ALARM FIRE] 闹钟 %d 触发！\n", i + 1);
@@ -323,6 +325,9 @@ void loop()
       AppState.isCountdownRunning = false;
       AppState.isCountdownFinished = true;
       AppState.countdownFinishSysTime = millis();
+      // 【新增】：如果不在倒计时界面，记录原界面
+      if (AppState.currentMode != MODE_COUNTDOWN)
+        AppState.previousMode = AppState.currentMode;
       AppState.currentMode = MODE_COUNTDOWN;
       Serial.println("[⏳ CDOWN FIRE] 倒计时结束触发！");
     }

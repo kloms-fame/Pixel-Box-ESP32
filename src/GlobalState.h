@@ -23,7 +23,6 @@ struct AlarmData
     unsigned long ringStartSysTime = 0;
 };
 
-// 严谨的单例模式 (Singleton) 管理全局状态与 NVS 存储
 class AppStateManager
 {
 private:
@@ -53,6 +52,7 @@ public:
 
     // === 易失性运行状态 (Volatile) ===
     AppMode currentMode = MODE_CLOCK;
+    AppMode previousMode = MODE_CLOCK; // 【新增】保存打断前的界面
 
     uint8_t currentHR = 0;
     uint16_t currentCadence = 0;

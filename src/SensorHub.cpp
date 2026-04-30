@@ -198,9 +198,14 @@ int SensorHub_GetActiveClientCount() { return activeClients.size(); }
 void SensorHub_DisconnectAll()
 {
     Serial.println("\n[✂️ DISCONNECT ALL] 执行强制断开所有外设链路");
-    for (auto pClient : activeClients)
+    // 【核心修复】：先复制一份数组，防止底层断开回调触发 erase 导致野指针崩溃重启
+    auto clientsCopy = activeClients;
+    for (auto pClient : clientsCopy)
     {
-        pClient->disconnect();
+        if (pClient->isConnected())
+        {
+            pClient->disconnect();
+        }
     }
 }
 
