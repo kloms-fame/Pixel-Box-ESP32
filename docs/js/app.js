@@ -1,5 +1,6 @@
 class PixelApp {
     constructor() {
+        this.wakeLock = null; // 【新增】：常亮锁对象
         this.initPWA();
         this.initDOM();
         this.bindEvents();
@@ -115,6 +116,16 @@ class PixelApp {
                 btnDisc.style.display = 'block';
                 btnDisc.disabled = false;
 
+                // 【核心微雕】：请求屏幕常亮锁，只要保持连接，手机就不会息屏！
+                try {
+                    if ('wakeLock' in navigator) {
+                        this.wakeLock = await navigator.wakeLock.request('screen');
+                        UI.log("[SYS] 已激活屏幕常亮模式，专注您的运动数据");
+                    }
+                } catch (err) {
+                    console.log(`Wake Lock Error: ${err.name}, ${err.message}`);
+                }
+
                 UI.log(`LINK_ESTABLISHED: ${name}，下发系统时间并请求配置...`);
 
                 const d = new Date();
@@ -196,6 +207,12 @@ class PixelApp {
         document.getElementById('btnConnect').style.display = 'block';
         document.getElementById('btnDisconnect').style.display = 'none';
         UI.log("LINK_TERMINATED: 设备已离线");
+
+        // 【核心微雕】：设备断开时，释放屏幕常亮锁，让手机恢复正常息屏
+        if (this.wakeLock !== null) {
+            this.wakeLock.release().then(() => { this.wakeLock = null; });
+            UI.log("[SYS] 已释放屏幕常亮锁");
+        }
     }
 
     handleRx(e) {

@@ -9,7 +9,6 @@ ScanCallbackFunc activeScanCb = nullptr;
 uint16_t lastCrankRevs = 0;
 uint16_t lastCrankTime = 0;
 
-// 【修复核心 1】：使用全局缓存变量替代极其耗时的 getService() 实时查询，消除切屏卡顿！
 bool cachedHasHRM = false;
 bool cachedHasCSC = false;
 
@@ -80,7 +79,7 @@ class ClientCallbacks : public NimBLEClientCallbacks
             else
                 ++it;
         }
-        updateSensorCache(); // 更新缓存
+        updateSensorCache();
 
         if (activeClients.empty())
         {
@@ -124,18 +123,16 @@ class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
         {
             if (mac == AppState.savedHrmMac || mac == AppState.savedCscMac)
             {
-                // 【修复核心 2】：防重复连接轰炸拦截器
                 bool alreadyActive = false;
                 for (auto c : activeClients)
                 {
                     if (c->getPeerAddress() == device->getAddress())
                         alreadyActive = true;
                 }
-                // 只有在没连过，且指令队列没满的情况下才触发
                 if (!alreadyActive && AppState.pendingCmd != 6)
                 {
                     Serial.printf("[⚡ AUTO-RECONNECT] 发现设备 %s，立即刹停雷达并直连！\n", mac.c_str());
-                    NimBLEDevice::getScan()->stop(); // 立即强行停止扫描！杜绝[SYNC]狂发
+                    NimBLEDevice::getScan()->stop();
                     AppState.pendingAddr = device->getAddress();
                     AppState.pendingCmd = 6;
                 }
@@ -145,14 +142,21 @@ class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
 };
 AutoReconnectScanCallbacks autoScanCb;
 
+// 【核心微雕】：创建一个空的扫描结束回调，用于激活 NimBLE 的非阻塞扫描模式
+void scanEndedCB(NimBLEScanResults results)
+{
+    NimBLEDevice::getScan()->clearResults();
+    Serial.println("[🔍 SCAN DONE] 后台雷达扫描周期结束.");
+}
+
 void SensorHub_StartScan(ScanCallbackFunc cb)
 {
     activeScanCb = cb;
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&proxyScanCb);
     pScan->setActiveScan(true);
-    pScan->start(5, false);
-    pScan->clearResults();
+    // 【核心微雕】：传入 scanEndedCB，变为非阻塞模式，杜绝假死！
+    pScan->start(5, scanEndedCB, false);
 }
 
 void SensorHub_TriggerAutoReconnect(bool force)
@@ -161,11 +165,12 @@ void SensorHub_TriggerAutoReconnect(bool force)
         return;
     if (AppState.savedHrmMac == "" && AppState.savedCscMac == "")
         return;
+    Serial.println("\n[🔍 AUTO-RECONNECT] 正在后台静默寻呼已知绑定设备...");
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&autoScanCb);
     pScan->setActiveScan(true);
-    pScan->start(5, false);
-    pScan->clearResults();
+    // 【核心微雕】：传入 scanEndedCB，变为非阻塞模式
+    pScan->start(5, scanEndedCB, false);
 }
 
 void SensorHub_Connect(NimBLEAddress addr)
@@ -185,7 +190,7 @@ void SensorHub_Connect(NimBLEAddress addr)
     NimBLERemoteService *pSvcHRM = pClient->getService(NimBLEUUID(UUID_HRM_SVC));
     NimBLERemoteService *pSvcCSC = pClient->getService(NimBLEUUID(UUID_CSC_SVC));
 
-    updateSensorCache(); // 更新缓存
+    updateSensorCache();
 
     if (pSvcCSC != nullptr && pSvcHRM == nullptr)
     {
