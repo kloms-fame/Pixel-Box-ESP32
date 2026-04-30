@@ -1,5 +1,5 @@
 // ⚠️ 每次你的 UI 或 JS 有大修改时，只要把这里的版本号 +1，就能强制所有用户的手机更新
-const CACHE_NAME = 'pixel-box-v16';
+const CACHE_NAME = 'pixel-box-v17';
 
 const ASSETS = [
     './',

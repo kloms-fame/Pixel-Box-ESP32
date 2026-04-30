@@ -5,9 +5,8 @@
 #include "DisplayCore.h"
 #include "SensorHub.h"
 #include "WebGateway.h"
-#include "ButtonManager.h" // 确保引入按键管理器
+#include "ButtonManager.h"
 
-// ================== UI 渲染子模块 ==================
 void renderClock()
 {
   static unsigned long lastUpdate = 0;
@@ -33,70 +32,105 @@ void renderClock()
   }
 }
 
-void renderSensor()
+// 【修复核心 3】完美剥离的运动面板显示逻辑
+void renderSensor(bool showHRM)
 {
   static unsigned long lastFrame = 0;
   if (millis() - lastFrame < 100)
     return;
   lastFrame = millis();
 
-  static unsigned long lastToggle = 0;
-  static bool showHR = true;
-  bool hasHR = (AppState.currentHR > 0);
-  bool hasCad = (AppState.currentCadence > 0 || SensorHub_GetActiveClientCount() > 0);
-  if (millis() - lastToggle > 3000)
-  {
-    showHR = !showHR;
-    lastToggle = millis();
-  }
-
   Display_Clear();
-  if (hasHR && hasCad)
+
+  if (showHRM)
   {
-    if (showHR)
-      goto RENDER_HR;
+    bool isConnected = SensorHub_HasHRM();
+    CRGB hrColor = CRGB::Red;
+    bool isBeating = (AppState.currentHR > 0 && (millis() / 500) % 2 == 0);
+
+    // 渲染心形图标
+    if (isBeating || !isConnected || AppState.currentHR == 0)
+    {
+      Display_DrawPixel(0, 2, hrColor);
+      Display_DrawPixel(1, 1, hrColor);
+      Display_DrawPixel(2, 2, hrColor);
+      Display_DrawPixel(1, 3, hrColor);
+    }
+
+    if (isConnected)
+    {
+      uint8_t hr = AppState.currentHR;
+      if (hr >= 100)
+      {
+        Display_DrawDigit(4, 1, hr / 100, hrColor);
+        Display_DrawDigit(8, 1, (hr / 10) % 10, hrColor);
+        Display_DrawDigit(12, 1, hr % 10, hrColor);
+      }
+      else if (hr >= 10)
+      {
+        Display_DrawDigit(6, 1, (hr / 10) % 10, hrColor);
+        Display_DrawDigit(10, 1, hr % 10, hrColor);
+      }
+      else
+      {
+        Display_DrawDigit(8, 1, hr, hrColor);
+      }
+    }
     else
-      goto RENDER_CAD;
-  }
-  else if (hasHR)
-  {
-  RENDER_HR:
-    Display_DrawPixel(0, 2, CRGB::Red);
-    Display_DrawPixel(1, 1, CRGB::Red);
-    Display_DrawPixel(2, 2, CRGB::Red);
-    Display_DrawPixel(1, 3, CRGB::Red);
-    if (AppState.currentHR >= 100)
-      Display_DrawDigit(4, 1, AppState.currentHR / 100, CRGB::Red);
-    Display_DrawDigit(8, 1, (AppState.currentHR / 10) % 10, CRGB::Red);
-    Display_DrawDigit(12, 1, AppState.currentHR % 10, CRGB::Red);
+    {
+      Display_DrawDigit(7, 1, 10, hrColor);
+      Display_DrawDigit(11, 1, 10, hrColor);
+    }
+
+    // 右上角指示灯：只看心率是否连着
+    CRGB statusColor = isConnected ? CRGB::Green : CRGB::Red;
+    Display_DrawPixel(15, 0, statusColor);
   }
   else
   {
-  RENDER_CAD:
-    CRGB c = CRGB(0, 255, 128);
-    Display_DrawPixel(0, 6, c);
-    Display_DrawPixel(1, 5, c);
-    Display_DrawPixel(0, 4, c);
-    uint16_t cad = AppState.currentCadence;
-    if (cad >= 100)
+    bool isConnected = SensorHub_HasCSC();
+    CRGB cadColor = CRGB(0, 255, 128);
+    bool isPedaling = (AppState.currentCadence > 0 && (millis() / 250) % 2 == 0);
+
+    // 渲染曲柄图标
+    if (isPedaling || !isConnected || AppState.currentCadence == 0)
     {
-      Display_DrawDigit(3, 1, (cad / 100) % 10, c);
-      Display_DrawDigit(7, 1, (cad / 10) % 10, c);
-      Display_DrawDigit(11, 1, cad % 10, c);
+      Display_DrawPixel(0, 1, cadColor);
+      Display_DrawPixel(1, 2, cadColor);
+      Display_DrawPixel(2, 3, cadColor);
+      Display_DrawPixel(1, 4, cadColor);
+      Display_DrawPixel(0, 3, cadColor);
     }
-    else if (cad >= 10)
+
+    if (isConnected)
     {
-      Display_DrawDigit(5, 1, (cad / 10) % 10, c);
-      Display_DrawDigit(9, 1, cad % 10, c);
+      uint16_t cad = AppState.currentCadence;
+      if (cad >= 100)
+      {
+        Display_DrawDigit(4, 1, (cad / 100) % 10, cadColor);
+        Display_DrawDigit(8, 1, (cad / 10) % 10, cadColor);
+        Display_DrawDigit(12, 1, cad % 10, cadColor);
+      }
+      else if (cad >= 10)
+      {
+        Display_DrawDigit(6, 1, (cad / 10) % 10, cadColor);
+        Display_DrawDigit(10, 1, cad % 10, cadColor);
+      }
+      else
+      {
+        Display_DrawDigit(8, 1, cad, cadColor);
+      }
     }
     else
     {
-      Display_DrawDigit(7, 1, cad % 10, c);
+      Display_DrawDigit(7, 1, 10, cadColor);
+      Display_DrawDigit(11, 1, 10, cadColor);
     }
-  }
 
-  CRGB statusColor = (SensorHub_GetActiveClientCount() > 0) ? CRGB::Green : CRGB::Red;
-  Display_DrawPixel(15, 0, statusColor);
+    // 右上角指示灯：只看踏频是否连着
+    CRGB statusColor = isConnected ? CRGB::Green : CRGB::Red;
+    Display_DrawPixel(15, 0, statusColor);
+  }
 
   Display_Show();
 }
@@ -243,21 +277,12 @@ void renderAlarm()
 void setup()
 {
   Serial.begin(115200);
-
-  // 1. 初始化顺序至关重要
   AppState.begin();
   NimBLEDevice::init(BLE_DEVICE_NAME);
   Display_Init();
-
-  // 【修复 1】只能调用一次，否则会破坏底层 GATT 服务结构导致网页连不上
   WebGateway_Init();
-
-  // 2. 初始化物理按键
   ButtonManager_Init();
-
-  Serial.println("🚀 Pixel-Box OS Core Ready. [NVS + Sync + AutoRecon + Buttons]");
-
-  // 【修复 3】不要在 setup 里阻塞扫描，防止触发看门狗重启，放入队列异步执行
+  Serial.println("🚀 Pixel-Box OS Core Ready.");
   AppState.pendingCmd = 8;
 }
 
@@ -265,7 +290,6 @@ void loop()
 {
   ButtonManager_Loop();
 
-  // ================= 异步任务队列 =================
   if (AppState.pendingCmd != 0)
   {
     int cmd = AppState.pendingCmd;
@@ -287,7 +311,6 @@ void loop()
       SensorHub_TriggerAutoReconnect(true);
   }
 
-  // ================= 时间守护进程 =================
   time_t now;
   struct tm timeinfo;
   time(&now);
@@ -303,12 +326,10 @@ void loop()
       {
         AppState.alarms[i].isRinging = true;
         AppState.alarms[i].ringStartSysTime = millis();
-        // 【新增】：如果不在闹钟界面，记录原界面
         if (AppState.currentMode != MODE_ALARM)
           AppState.previousMode = AppState.currentMode;
         AppState.currentMode = MODE_ALARM;
         AppState.alarmDisplayIndex = i;
-        Serial.printf("[⏰ ALARM FIRE] 闹钟 %d 触发！\n", i + 1);
       }
     }
   }
@@ -325,22 +346,22 @@ void loop()
       AppState.isCountdownRunning = false;
       AppState.isCountdownFinished = true;
       AppState.countdownFinishSysTime = millis();
-      // 【新增】：如果不在倒计时界面，记录原界面
       if (AppState.currentMode != MODE_COUNTDOWN)
         AppState.previousMode = AppState.currentMode;
       AppState.currentMode = MODE_COUNTDOWN;
-      Serial.println("[⏳ CDOWN FIRE] 倒计时结束触发！");
     }
   }
 
-  // ================= UI 分发路由 =================
   switch (AppState.currentMode)
   {
   case MODE_CLOCK:
     renderClock();
     break;
-  case MODE_SENSOR:
-    renderSensor();
+  case MODE_SENSOR_HRM:
+    renderSensor(true);
+    break;
+  case MODE_SENSOR_CSC:
+    renderSensor(false);
     break;
   case MODE_TIMER:
     renderTimer();

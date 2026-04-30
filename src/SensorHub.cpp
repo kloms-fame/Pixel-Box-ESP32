@@ -1,6 +1,7 @@
 #include "SensorHub.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
+#include "WebGateway.h"
 #include <vector>
 
 std::vector<NimBLEClient *> activeClients;
@@ -8,20 +9,37 @@ ScanCallbackFunc activeScanCb = nullptr;
 uint16_t lastCrankRevs = 0;
 uint16_t lastCrankTime = 0;
 
+// 【修复核心 1】：使用全局缓存变量替代极其耗时的 getService() 实时查询，消除切屏卡顿！
+bool cachedHasHRM = false;
+bool cachedHasCSC = false;
+
+void updateSensorCache()
+{
+    cachedHasHRM = false;
+    cachedHasCSC = false;
+    for (auto pClient : activeClients)
+    {
+        if (pClient->isConnected())
+        {
+            if (pClient->getService(NimBLEUUID(UUID_HRM_SVC)) != nullptr)
+                cachedHasHRM = true;
+            if (pClient->getService(NimBLEUUID(UUID_CSC_SVC)) != nullptr)
+                cachedHasCSC = true;
+        }
+    }
+}
+
+bool SensorHub_HasHRM() { return cachedHasHRM; }
+bool SensorHub_HasCSC() { return cachedHasCSC; }
+
 void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, size_t length, bool isNotify)
 {
     uint16_t charUUID = pChar->getUUID().getNative()->u16.value;
     uint8_t flags = pData[0];
 
-    Serial.printf("\n[📥 SENSOR RAW] UUID: 0x%04X, Len: %d | HEX: ", charUUID, length);
-    for (size_t i = 0; i < length; i++)
-        Serial.printf("%02X ", pData[i]);
-    Serial.println();
-
     if (charUUID == UUID_HRM_CHAR)
     {
         AppState.currentHR = (flags & 1) ? (pData[1] | (pData[2] << 8)) : pData[1];
-        Serial.printf("[❤ HRM PARSED] 当前心率: %d bpm\n", AppState.currentHR);
     }
     else if (charUUID == UUID_CSC_CHAR)
     {
@@ -32,14 +50,12 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
             uint16_t crankTime = pData[offset + 2] | (pData[offset + 3] << 8);
             if (lastCrankTime != 0 && crankTime != lastCrankTime)
             {
-                // 解决 65533 塌陷问题
                 uint16_t timeDiff = (uint16_t)(crankTime - lastCrankTime);
                 uint16_t revsDiff = (uint16_t)(crankRevs - lastCrankRevs);
                 if (timeDiff > 0)
                 {
                     AppState.currentCadence = (uint16_t)(((uint32_t)revsDiff * 60 * 1024) / timeDiff);
                     AppState.lastCrankSysTime = millis();
-                    Serial.printf("[🚴 CSC PARSED] 踏频更新: %d rpm (增量: %u 圈 / %u 单位时间)\n", AppState.currentCadence, revsDiff, timeDiff);
                 }
             }
             lastCrankRevs = crankRevs;
@@ -64,11 +80,13 @@ class ClientCallbacks : public NimBLEClientCallbacks
             else
                 ++it;
         }
+        updateSensorCache(); // 更新缓存
+
         if (activeClients.empty())
         {
             AppState.currentHR = 0;
             AppState.currentCadence = 0;
-            if (AppState.currentMode == MODE_SENSOR)
+            if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
             {
                 Display_Clear();
                 Display_Show();
@@ -90,8 +108,6 @@ class ProxyScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
                 type = 1;
             else if (device->isAdvertisingService(NimBLEUUID(UUID_CSC_SVC)))
                 type = 2;
-
-            Serial.printf("[📡 SCAN HIT] MAC: %s, Name: %s\n", device->getAddress().toString().c_str(), device->getName().c_str());
             if (activeScanCb)
                 activeScanCb(type, device->getAddress().getType(), device->getAddress().toString(), device->getName());
         }
@@ -108,9 +124,21 @@ class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
         {
             if (mac == AppState.savedHrmMac || mac == AppState.savedCscMac)
             {
-                Serial.printf("[⚡ AUTO-RECONNECT] 发现历史设备 %s，即将直连！\n", mac.c_str());
-                AppState.pendingAddr = device->getAddress();
-                AppState.pendingCmd = 6;
+                // 【修复核心 2】：防重复连接轰炸拦截器
+                bool alreadyActive = false;
+                for (auto c : activeClients)
+                {
+                    if (c->getPeerAddress() == device->getAddress())
+                        alreadyActive = true;
+                }
+                // 只有在没连过，且指令队列没满的情况下才触发
+                if (!alreadyActive && AppState.pendingCmd != 6)
+                {
+                    Serial.printf("[⚡ AUTO-RECONNECT] 发现设备 %s，立即刹停雷达并直连！\n", mac.c_str());
+                    NimBLEDevice::getScan()->stop(); // 立即强行停止扫描！杜绝[SYNC]狂发
+                    AppState.pendingAddr = device->getAddress();
+                    AppState.pendingCmd = 6;
+                }
             }
         }
     }
@@ -119,24 +147,20 @@ AutoReconnectScanCallbacks autoScanCb;
 
 void SensorHub_StartScan(ScanCallbackFunc cb)
 {
-    Serial.println("\n[🔍 SYS_SCAN] 启动物理层广域扫描...");
     activeScanCb = cb;
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&proxyScanCb);
     pScan->setActiveScan(true);
     pScan->start(5, false);
     pScan->clearResults();
-    Serial.println("[🔍 SYS_SCAN] 物理扫描结束.");
 }
 
-void SensorHub_TriggerAutoReconnect()
+void SensorHub_TriggerAutoReconnect(bool force)
 {
-    if (!AppState.autoReconnect || (AppState.savedHrmMac == "" && AppState.savedCscMac == ""))
-    {
-        Serial.println("[⏭️ AUTO-RECONNECT] 未开启自动重连或无历史记录，跳过.");
+    if (!force && !AppState.autoReconnect)
         return;
-    }
-    Serial.println("\n[🔍 AUTO-RECONNECT] 后台寻呼历史绑定设备中...");
+    if (AppState.savedHrmMac == "" && AppState.savedCscMac == "")
+        return;
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&autoScanCb);
     pScan->setActiveScan(true);
@@ -146,7 +170,6 @@ void SensorHub_TriggerAutoReconnect()
 
 void SensorHub_Connect(NimBLEAddress addr)
 {
-    Serial.printf("\n[🔗 CONNECT INIT] 尝试直连 MAC: %s\n", addr.toString().c_str());
     NimBLEClient *pClient = NimBLEDevice::createClient();
     pClient->setClientCallbacks(&clientCB, false);
     pClient->setConnectTimeout(10);
@@ -154,23 +177,35 @@ void SensorHub_Connect(NimBLEAddress addr)
 
     if (!pClient->connect(addr))
     {
-        Serial.printf("[⚠️ EXCEPTION] 连接失败! 设备可能未唤醒 (MAC: %s)\n", addr.toString().c_str());
         NimBLEDevice::deleteClient(pClient);
         return;
     }
     activeClients.push_back(pClient);
-    AppState.currentMode = MODE_SENSOR;
-    Display_Clear();
-    Display_Show();
 
     NimBLERemoteService *pSvcHRM = pClient->getService(NimBLEUUID(UUID_HRM_SVC));
+    NimBLERemoteService *pSvcCSC = pClient->getService(NimBLEUUID(UUID_CSC_SVC));
+
+    updateSensorCache(); // 更新缓存
+
+    if (pSvcCSC != nullptr && pSvcHRM == nullptr)
+    {
+        AppState.currentMode = MODE_SENSOR_CSC;
+    }
+    else
+    {
+        AppState.currentMode = MODE_SENSOR_HRM;
+    }
+
+    Display_Clear();
+    Display_Show();
+    WebGateway_BroadcastBasicState();
+
     if (pSvcHRM)
     {
         auto pChr = pSvcHRM->getCharacteristic(NimBLEUUID(UUID_HRM_CHAR));
         if (pChr && pChr->canNotify())
             pChr->subscribe(true, notifySensorCallback);
     }
-    NimBLERemoteService *pSvcCSC = pClient->getService(NimBLEUUID(UUID_CSC_SVC));
     if (pSvcCSC)
     {
         auto pChr = pSvcCSC->getCharacteristic(NimBLEUUID(UUID_CSC_CHAR));
@@ -181,7 +216,6 @@ void SensorHub_Connect(NimBLEAddress addr)
 
 void SensorHub_Disconnect(NimBLEAddress addr)
 {
-    Serial.printf("\n[✂️ DISCONNECT INIT] 强制切断 MAC: %s\n", addr.toString().c_str());
     for (auto pClient : activeClients)
     {
         if (pClient->getPeerAddress() == addr)
@@ -192,40 +226,14 @@ void SensorHub_Disconnect(NimBLEAddress addr)
     }
 }
 
-int SensorHub_GetActiveClientCount() { return activeClients.size(); }
-// ... 前面的代码不变 ...
-
 void SensorHub_DisconnectAll()
 {
-    Serial.println("\n[✂️ DISCONNECT ALL] 执行强制断开所有外设链路");
-    // 【核心修复】：先复制一份数组，防止底层断开回调触发 erase 导致野指针崩溃重启
     auto clientsCopy = activeClients;
     for (auto pClient : clientsCopy)
     {
         if (pClient->isConnected())
-        {
             pClient->disconnect();
-        }
     }
 }
 
-void SensorHub_TriggerAutoReconnect(bool force)
-{
-    // 如果不是强行触发且自动重连关闭了，就跳过
-    if (!force && !AppState.autoReconnect)
-    {
-        Serial.println("[⏭️ AUTO-RECONNECT] 未开启自动重连，跳过.");
-        return;
-    }
-    if (AppState.savedHrmMac == "" && AppState.savedCscMac == "")
-    {
-        Serial.println("[⏭️ AUTO-RECONNECT] 数据库无历史设备记忆，无法直连.");
-        return;
-    }
-    Serial.println("\n[🔍 AUTO-RECONNECT] 正在后台寻呼已知绑定设备...");
-    NimBLEScan *pScan = NimBLEDevice::getScan();
-    pScan->setAdvertisedDeviceCallbacks(&autoScanCb);
-    pScan->setActiveScan(true);
-    pScan->start(5, false);
-    pScan->clearResults();
-}
+int SensorHub_GetActiveClientCount() { return activeClients.size(); }

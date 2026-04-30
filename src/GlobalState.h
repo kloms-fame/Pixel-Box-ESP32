@@ -3,14 +3,16 @@
 #include <NimBLEAddress.h>
 #include <Preferences.h>
 
+// 【修改】将 MODE_SENSOR 细分为 HRM 和 CSC 模式
 enum AppMode
 {
     MODE_OFF = 0,
     MODE_CLOCK = 1,
-    MODE_SENSOR = 2,
-    MODE_TIMER = 3,
-    MODE_COUNTDOWN = 4,
-    MODE_ALARM = 5
+    MODE_SENSOR_HRM = 2, // 运动模式 - 心率专注
+    MODE_SENSOR_CSC = 3, // 运动模式 - 踏频专注
+    MODE_TIMER = 4,
+    MODE_COUNTDOWN = 5,
+    MODE_ALARM = 6
 };
 
 struct AlarmData

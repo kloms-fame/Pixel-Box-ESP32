@@ -1,6 +1,7 @@
 #include "WebGateway.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
+#include "SensorHub.h"
 #include <NimBLEDevice.h>
 #include <sys/time.h>
 #include <vector>
@@ -67,10 +68,30 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x08)
         {
-            AppState.currentMode = MODE_SENSOR;
+            // 【修改】：如果在运动模式就来回切，如果不在运动模式就智能进入已连接设备
+            if (AppState.currentMode == MODE_SENSOR_HRM)
+            {
+                AppState.currentMode = MODE_SENSOR_CSC;
+            }
+            else if (AppState.currentMode == MODE_SENSOR_CSC)
+            {
+                AppState.currentMode = MODE_SENSOR_HRM;
+            }
+            else
+            {
+                if (SensorHub_HasCSC() && !SensorHub_HasHRM())
+                {
+                    AppState.currentMode = MODE_SENSOR_CSC;
+                }
+                else
+                {
+                    AppState.currentMode = MODE_SENSOR_HRM;
+                }
+            }
             Display_Clear();
             Display_Show();
-            Serial.println("[🚴 UI] 运动数据面板");
+            WebGateway_BroadcastBasicState(); // 通知手机 UI 同步
+            Serial.println("[🚴 UI] 切换并进入运动数据面板");
         }
         else if (cmd == 0x09)
         {

@@ -11,11 +11,9 @@ OneButton btnPlus(BTN_PLUS_PIN, true, true);
 OneButton btnMinus(BTN_MINUS_PIN, true, true);
 OneButton btnOk(BTN_OK_PIN, true, true);
 
-// ================== 全局报警打断拦截器 ==================
 bool checkAndDismissAlerts()
 {
     bool alerted = false;
-
     for (int i = 0; i < 3; i++)
     {
         if (AppState.alarms[i].isRinging)
@@ -24,27 +22,22 @@ bool checkAndDismissAlerts()
             alerted = true;
         }
     }
-
     if (AppState.isCountdownFinished)
     {
         AppState.isCountdownFinished = false;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         alerted = true;
     }
-
     if (alerted)
     {
         AppState.currentMode = AppState.previousMode;
         Display_Clear();
         Display_Show();
         WebGateway_BroadcastBasicState();
-        Serial.println("[⌨️ KEY] 任意键按下 -> 已强行打断提醒并恢复原界面");
         return true;
     }
     return false;
 }
-
-// ================== 按键事件回调 ==================
 
 void onModeClick()
 {
@@ -52,13 +45,30 @@ void onModeClick()
         return;
 
     int m = AppState.currentMode;
-    m = (m + 1) % 6;
-    AppState.currentMode = (AppMode)m;
 
+    // 【智能跨越逻辑】：把心率和踏频当作一个模块跳跃
+    if (m == MODE_CLOCK)
+    {
+        // 如果只有踏频连着，就进踏频；否则进心率
+        m = (SensorHub_HasCSC() && !SensorHub_HasHRM()) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
+    }
+    else if (m == MODE_SENSOR_HRM || m == MODE_SENSOR_CSC)
+    {
+        m = MODE_TIMER;
+    }
+    else if (m == MODE_TIMER)
+        m = MODE_COUNTDOWN;
+    else if (m == MODE_COUNTDOWN)
+        m = MODE_ALARM;
+    else if (m == MODE_ALARM)
+        m = MODE_OFF;
+    else if (m == MODE_OFF)
+        m = MODE_CLOCK;
+
+    AppState.currentMode = (AppMode)m;
     Display_Clear();
     Display_Show();
     WebGateway_BroadcastBasicState();
-    Serial.printf("[⌨️ KEY] MODE单击 -> 切换UI模式至: %d\n", m);
 }
 
 void onPlusClick()
@@ -66,15 +76,20 @@ void onPlusClick()
     if (checkAndDismissAlerts())
         return;
 
-    if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
+    if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        // 【核心修改】：1到60完美循环 (+1)
+        AppState.currentMode = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
+        Display_Clear();
+        Display_Show();
+        WebGateway_BroadcastBasicState();
+    }
+    else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
+    {
         uint32_t mins = AppState.countdownTotalSeconds / 60;
         mins = mins % 60 + 1;
         AppState.countdownTotalSeconds = mins * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         WebGateway_BroadcastCdownConfig();
-        Serial.printf("[⌨️ KEY] PLUS单击 -> 倒计时循环至: %d 分钟\n", mins);
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
@@ -99,15 +114,20 @@ void onMinusClick()
     if (checkAndDismissAlerts())
         return;
 
-    if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
+    if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        // 【核心修改】：1到60完美循环 (-1)
+        AppState.currentMode = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
+        Display_Clear();
+        Display_Show();
+        WebGateway_BroadcastBasicState();
+    }
+    else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
+    {
         uint32_t mins = AppState.countdownTotalSeconds / 60;
         mins = (mins - 1 - 1 + 60) % 60 + 1;
         AppState.countdownTotalSeconds = mins * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         WebGateway_BroadcastCdownConfig();
-        Serial.printf("[⌨️ KEY] MINUS单击 -> 倒计时循环至: %d 分钟\n", mins);
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
@@ -131,16 +151,13 @@ void onPlusLongPress()
 {
     if (checkAndDismissAlerts())
         return;
-
     if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
-        // 【核心修改】：长按跨越 +10 完美循环
         uint32_t mins = AppState.countdownTotalSeconds / 60;
         mins = (mins + 10 - 1) % 60 + 1;
         AppState.countdownTotalSeconds = mins * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         WebGateway_BroadcastCdownConfig();
-        Serial.printf("[⌨️ KEY] PLUS长按 -> 倒计时跃进增加至: %d 分钟\n", mins);
     }
 }
 
@@ -148,16 +165,13 @@ void onMinusLongPress()
 {
     if (checkAndDismissAlerts())
         return;
-
     if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
-        // 【核心修改】：长按跨越 -10 完美循环
         uint32_t mins = AppState.countdownTotalSeconds / 60;
         mins = (mins - 10 - 1 + 60) % 60 + 1;
         AppState.countdownTotalSeconds = mins * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         WebGateway_BroadcastCdownConfig();
-        Serial.printf("[⌨️ KEY] MINUS长按 -> 倒计时跃进减少至: %d 分钟\n", mins);
     }
 }
 
@@ -166,11 +180,9 @@ void onOkClick()
     if (checkAndDismissAlerts())
         return;
 
-    if (AppState.currentMode == MODE_SENSOR)
+    if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        // 【核心修改】：短按强制发起寻呼直连
         AppState.pendingCmd = 10;
-        Serial.println("[⌨️ KEY] OK单击 -> 发起直连已知骑行设备指令");
     }
     else if (AppState.currentMode == MODE_TIMER)
     {
@@ -217,13 +229,11 @@ void onOkLongPress()
     if (checkAndDismissAlerts())
         return;
 
-    if (AppState.currentMode == MODE_SENSOR)
+    if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        // 【核心修改】：长按防误触断开
         if (SensorHub_GetActiveClientCount() > 0)
         {
             AppState.pendingCmd = 9;
-            Serial.println("[⌨️ KEY] OK长按 -> 强行断开所有骑行设备");
         }
     }
     else if (AppState.currentMode == MODE_TIMER)
@@ -248,7 +258,6 @@ void ButtonManager_Init()
     btnMinus.attachLongPressStart(onMinusLongPress);
     btnOk.attachClick(onOkClick);
     btnOk.attachLongPressStart(onOkLongPress);
-    Serial.println("[⌨️ INIT] 物理按键防误触、循环逻辑重构完毕");
 }
 
 void ButtonManager_Loop()
