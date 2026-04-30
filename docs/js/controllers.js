@@ -66,5 +66,14 @@ class TimeController {
         document.getElementById('btnTmStart').onclick = () => BLEManager.send([0x0A, 0x01]);
         document.getElementById('btnTmPause').onclick = () => BLEManager.send([0x0A, 0x00]);
         document.getElementById('btnTmReset').onclick = () => BLEManager.send([0x0A, 0x02]);
+
+        // 【新增】接收单片机硬件按键发来的倒计时更新
+        syncCdown(mins) {
+            const slCd = document.getElementById('slCdown');
+            const valCd = document.getElementById('valCdown');
+            slCd.value = mins;
+            valCd.innerText = mins + ' 分钟';
+            UI.log(`[SYNC] 硬件按键下发 -> 倒数预设已变更为 ${mins} 分钟`);
+        }
     }
 }

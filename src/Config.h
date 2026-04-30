@@ -29,4 +29,10 @@ using namespace std;
 #define UUID_CSC_SVC (uint16_t)0x1816
 #define UUID_CSC_CHAR (uint16_t)0x2A5B
 
+// ==================== 物理按键配置 (HX-543) ====================
+#define BTN_MODE_PIN 4
+#define BTN_PLUS_PIN 5
+#define BTN_MINUS_PIN 6
+#define BTN_OK_PIN 7
+
 #endif // CONFIG_H

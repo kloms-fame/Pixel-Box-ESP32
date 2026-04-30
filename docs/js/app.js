@@ -185,6 +185,8 @@ class PixelApp {
             document.getElementById('brightVal').innerText = bright;
             document.getElementById('autoRecEn').checked = (autoRec === 1);
             UI.log("[SYNC] 基础配置已同步至 Web");
+            // 基础配置同步 (同时兼容连接握手和物理按键触发)
+            this.sysCtrl.syncState(v[2], v[3]);
         }
         else if (cmd === 0x11) {
             // 闹钟矩阵 NVS 同步
@@ -197,6 +199,10 @@ class PixelApp {
                 document.getElementById(`almTime${idx}`).value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
                 document.getElementById(`almEn${idx}`).checked = (enabled === 1);
             }
+        }
+        else if (cmd === 0x12) {
+            // 【新增】处理单片机按键调整的倒计时长同步
+            this.timeCtrl.syncCdown(v[1]);
         }
     }
 

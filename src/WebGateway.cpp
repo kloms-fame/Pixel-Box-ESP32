@@ -215,3 +215,24 @@ void WebGateway_SendScanResult(uint8_t type, uint8_t addrType, std::string macSt
         pTxCharacteristic->notify();
     }
 }
+
+// 将硬件按键导致的模式、亮度变更主动推流给 Web
+void WebGateway_BroadcastBasicState()
+{
+    if (!pTxCharacteristic)
+        return;
+    std::vector<uint8_t> p = {0x10, (uint8_t)AppState.currentMode, AppState.brightness, (uint8_t)(AppState.autoReconnect ? 1 : 0)};
+    pTxCharacteristic->setValue(p.data(), p.size());
+    pTxCharacteristic->notify();
+}
+
+// 将硬件按键导致的倒计时配置主动推流给 Web
+void WebGateway_BroadcastCdownConfig()
+{
+    if (!pTxCharacteristic)
+        return;
+    uint8_t mins = AppState.countdownTotalSeconds / 60;
+    std::vector<uint8_t> p = {0x12, mins};
+    pTxCharacteristic->setValue(p.data(), p.size());
+    pTxCharacteristic->notify();
+}

@@ -5,7 +5,9 @@
 #include "DisplayCore.h"
 #include "SensorHub.h"
 #include "WebGateway.h"
+#include "ButtonManager.h" // 确保引入按键管理器
 
+// ================== UI 渲染子模块 ==================
 void renderClock()
 {
   static unsigned long lastUpdate = 0;
@@ -238,18 +240,29 @@ void setup()
 {
   Serial.begin(115200);
 
-  // 初始化顺序至关重要
+  // 1. 初始化顺序至关重要
   AppState.begin();
   NimBLEDevice::init(BLE_DEVICE_NAME);
   Display_Init();
+
+  // 【修复 1】只能调用一次，否则会破坏底层 GATT 服务结构导致网页连不上
   WebGateway_Init();
 
-  Serial.println("🚀 Pixel-Box OS Core Ready. [NVS + Sync + AutoRecon]");
-  SensorHub_TriggerAutoReconnect();
+  // 2. 初始化物理按键
+  ButtonManager_Init();
+
+  Serial.println("🚀 Pixel-Box OS Core Ready. [NVS + Sync + AutoRecon + Buttons]");
+
+  // 【修复 3】不要在 setup 里阻塞扫描，防止触发看门狗重启，放入队列异步执行
+  AppState.pendingCmd = 8;
 }
 
 void loop()
 {
+  // 【修复 2】必须在主循环调用，按键才能实时响应
+  ButtonManager_Loop();
+
+  // ================= 异步任务队列 =================
   if (AppState.pendingCmd != 0)
   {
     int cmd = AppState.pendingCmd;
@@ -263,8 +276,11 @@ void loop()
       SensorHub_Connect(AppState.pendingAddr);
     else if (cmd == 7)
       SensorHub_Disconnect(AppState.pendingAddr);
+    else if (cmd == 8)
+      SensorHub_TriggerAutoReconnect(); // 异步执行开机自动重连
   }
 
+  // ================= 时间守护进程 =================
   time_t now;
   struct tm timeinfo;
   time(&now);
@@ -304,6 +320,7 @@ void loop()
     }
   }
 
+  // ================= UI 分发路由 =================
   switch (AppState.currentMode)
   {
   case MODE_CLOCK:
@@ -324,5 +341,6 @@ void loop()
   case MODE_OFF:
     break;
   }
+
   delay(10);
 }
