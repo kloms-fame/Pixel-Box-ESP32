@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Pixel-Box | 核心终端</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+
+    <header class="app-header">
+        <h1>Pixel-Box <span class="header-sub">OS_CORE</span></h1>
+        <div style="display: flex; gap: 10px;">
+            <button id="btnConnect">_INIT_CONNECTION</button>
+            <button id="btnDisconnect" class="btn-danger ctrl-btn" disabled>_TERMINATE</button>
+        </div>
+    </header>
+
+    <main class="grid-layout">
+
+        <section class="card">
+            <h2>[ SYS_UI ] 视效集群分发</h2>
+            <div class="slider-group">
+                <label>🔆 亮度:</label>
+                <input type="range" id="slBrightness" class="ctrl-btn" min="0" max="255" value="30" disabled>
+                <span id="valBrightness" style="width: 24px; text-align: right;">30</span>
+            </div>
+            <div class="btn-group">
+                <button id="btnUiClock" class="ctrl-btn" disabled>🕒 时钟</button>
+                <button id="btnUiSensor" class="ctrl-btn" disabled>🚴 运动</button>
+                <button id="btnUiTimer" class="ctrl-btn" disabled>⏱️ 秒表</button>
+                <button id="btnUiCdown" class="ctrl-btn" disabled>⏳ 倒数</button>
+                <button id="btnUiAlarm" class="ctrl-btn" disabled>⏰ 闹钟矩阵</button>
+                <button id="btnUiOff" class="ctrl-btn btn-danger" disabled>📴 息屏</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>[ RDR_SCAN ] 广域设备雷达</h2>
+            <button id="btnScan" class="ctrl-btn" disabled style="flex-grow:0; margin-bottom: 10px;">>
+                EXECUTE_FULL_SCAN</button>
+            <div class="list-view" id="radarList">
+                <div class="standby-text">// STANDBY</div>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>[ TMR_CTRL ] 时间序列引擎</h2>
+            <div class="slider-group">
+                <label>⌛ 倒数时长:</label>
+                <input type="range" id="slCdown" class="slider-purple ctrl-btn" min="1" max="60" value="5" disabled>
+                <span id="valCdown" style="width: 45px; text-align: right;">5 Min</span>
+            </div>
+            <div class="btn-group" style="margin-bottom: 12px;">
+                <button id="btnCdApply" class="btn-purple ctrl-btn" disabled>⚡ 下发配置</button>
+                <button id="btnCdStart" class="btn-warn ctrl-btn" disabled>▶️ 开始倒数</button>
+                <button id="btnCdPause" class="btn-danger ctrl-btn" disabled>⏸️ 暂停</button>
+                <button id="btnCdReset" class="ctrl-btn" disabled>🔄 重置</button>
+            </div>
+            <div class="divider"></div>
+            <div class="btn-group">
+                <button id="btnTmStart" class="btn-warn ctrl-btn" disabled>▶️ 开始秒表</button>
+                <button id="btnTmPause" class="btn-danger ctrl-btn" disabled>⏸️ 暂停秒表</button>
+                <button id="btnTmReset" class="ctrl-btn" disabled>🔄 重置秒表</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h2>[ ALM_CTRL ] 硬件闹钟阵列</h2>
+            <div class="list-view no-border" id="alarmContainer">
+            </div>
+        </section>
+
+    </main>
+
+    <section class="terminal-log" id="sysLog">
+        > _SYSTEM_STANDBY_
+    </section>
+
+    <script src="js/ble.js"></script>
+    <script src="js/ui.js"></script>
+    <script src="js/app.js"></script>
+</body>
+
+</html>
