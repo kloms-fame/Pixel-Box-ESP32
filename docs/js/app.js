@@ -6,15 +6,12 @@ class PixelApp {
     }
 
     initPWA() {
-        // 1. 注册 Service Worker 实现断网离线访问
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').then(() => {
                 document.getElementById('pwaBadge').style.display = 'inline-block';
-                console.log("[PWA] 离线引擎注册成功");
             });
         }
 
-        // 2. 侦测是否运行在“桌面 App 模式” (如果已经是 App，就不需要再提示安装了)
         const isInStandaloneMode = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone || document.referrer.includes('android-app://');
 
         if (isInStandaloneMode()) {
@@ -22,14 +19,10 @@ class PixelApp {
             return;
         }
 
-        // 3. 针对 Android / Windows Chrome 的自动安装拦截
         let deferredPrompt;
         window.addEventListener('beforeinstallprompt', (e) => {
-            // 阻止浏览器默认的丑陋横幅
             e.preventDefault();
             deferredPrompt = e;
-
-            // 显示我们极简风的安装横幅
             const installBanner = document.getElementById('pwaInstallBanner');
             installBanner.style.display = 'flex';
 
@@ -44,19 +37,13 @@ class PixelApp {
             };
         });
 
-        // 4. 针对 iOS Safari 的专属拦截提醒 (苹果系统封闭，必须人工干预)
-        const isIos = () => {
-            const userAgent = window.navigator.userAgent.toLowerCase();
-            return /iphone|ipad|ipod/.test(userAgent);
-        };
-
+        const isIos = () => /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
         if (isIos() && !isInStandaloneMode()) {
             document.getElementById('iosInstallHint').style.display = 'block';
         }
     }
 
     initDOM() {
-        // 初始化时注入闹钟DOM，确保后续 ID 获取绝不会报错
         const container = document.getElementById('alarmContainer');
         container.innerHTML = '';
         for (let i = 0; i < 3; i++) {
@@ -78,7 +65,6 @@ class PixelApp {
     }
 
     bindEvents() {
-        // ====== 蓝牙系统控制 ======
         document.getElementById('btnConnect').onclick = async () => {
             try {
                 UI.log("NEGOTIATING HANDSHAKE...");
@@ -89,10 +75,16 @@ class PixelApp {
 
                 const btnDisc = document.getElementById('btnDisconnect');
                 btnDisc.style.display = 'block';
-                btnDisc.disabled = false; // 强行解除禁用状态，避免被 setConnectState 误杀
+                btnDisc.disabled = false;
 
-                UI.log(`LINK_ESTABLISHED: ${name}，请求 NVS 快照...`);
-                // 拉取 NVS 快照
+                UI.log(`LINK_ESTABLISHED: ${name}，下发系统时间并请求配置...`);
+
+                // 【核心修改】：连接成功的瞬间，全自动下发手机时间进行校准
+                const d = new Date();
+                const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
+                BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
+
+                // 延迟半秒拉取 NVS 快照
                 setTimeout(() => BLEManager.sendCmd([0x10]), 500);
 
             } catch (e) { UI.log(`ERR_CONNECT: ${e.message}`); }
@@ -100,7 +92,6 @@ class PixelApp {
 
         document.getElementById('btnDisconnect').onclick = () => BLEManager.disconnect();
 
-        // ====== 系统参数 (亮度 & 自动重连) ======
         const brightSlider = document.getElementById('brightSlider');
         brightSlider.oninput = (e) => document.getElementById('brightVal').innerText = e.target.value;
         brightSlider.onchange = (e) => {
@@ -113,7 +104,6 @@ class PixelApp {
             UI.log(`CMD: AUTO_RECONNECT -> ${e.target.checked ? 'ENABLED' : 'DISABLED'}`);
         };
 
-        // ====== UI 路由 ======
         document.getElementById('syncTimeBtn').onclick = () => {
             const d = new Date(); const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
             BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
@@ -125,14 +115,12 @@ class PixelApp {
         document.getElementById('alarmModeBtn').onclick = () => { BLEManager.sendCmd([0x0E]); UI.log("CMD: SWAP_UI -> ALARM_MATRIX"); };
         document.getElementById('clearBtn').onclick = () => { BLEManager.sendCmd([0x03]); UI.log("CMD: SWAP_UI -> SCREEN_OFF"); };
 
-        // ====== 传感器雷达 ======
         document.getElementById('scanBtn').onclick = () => {
             UI.clearRadar();
             BLEManager.sendCmd([0x05]);
             UI.log("CMD: FULL_PROXY_SCAN_DISPATCHED");
         };
 
-        // ====== 闹钟写入绑定 ======
         for (let i = 0; i < 3; i++) {
             document.getElementById(`almBtn${i}`).onclick = () => {
                 const timeVal = document.getElementById(`almTime${i}`).value;
@@ -144,12 +132,10 @@ class PixelApp {
             };
         }
 
-        // ====== 秒表 ======
         document.getElementById('timerStartBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x01]); UI.log("CMD: STOPWATCH -> RUN"); };
         document.getElementById('timerPauseBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x00]); UI.log("CMD: STOPWATCH -> PAUSE"); };
         document.getElementById('timerResetBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x02]); UI.log("CMD: STOPWATCH -> RESET"); };
 
-        // ====== 倒计时 ======
         const cdSlider = document.getElementById('cdSlider');
         cdSlider.oninput = (e) => document.getElementById('cdVal').innerText = e.target.value + ' 分钟';
         document.getElementById('cdApplyBtn').onclick = () => { BLEManager.sendCmd([0x0C, parseInt(cdSlider.value)]); UI.log(`CMD: CDOWN_CFG -> ${cdSlider.value} MINS`); };
@@ -165,31 +151,25 @@ class PixelApp {
         UI.log("LINK_TERMINATED: 设备已离线");
     }
 
-    // 接收并解析来自 ESP32 的所有报文 (包含握手同步报文)
     handleRx(e) {
         const v = new Uint8Array(e.target.value.buffer);
         const cmd = v[0];
 
         if (cmd === 0x05) {
-            // 扫描结果返回
             const type = v[1]; const addrType = v[2]; const macLen = v[3];
             const macStr = new TextDecoder().decode(v.slice(4, 4 + macLen));
             const name = new TextDecoder().decode(v.slice(4 + macLen));
             UI.addRadarDevice(type, addrType, macStr, name);
         }
         else if (cmd === 0x10) {
-            // 基础配置 NVS 同步
             const bright = v[2];
             const autoRec = v[3];
             document.getElementById('brightSlider').value = bright;
             document.getElementById('brightVal').innerText = bright;
             document.getElementById('autoRecEn').checked = (autoRec === 1);
             UI.log("[SYNC] 基础配置已同步至 Web");
-            // 基础配置同步 (同时兼容连接握手和物理按键触发)
-            this.sysCtrl.syncState(v[2], v[3]);
         }
         else if (cmd === 0x11) {
-            // 闹钟矩阵 NVS 同步
             const idx = v[1];
             const isSet = v[2];
             const enabled = v[3];
@@ -201,18 +181,19 @@ class PixelApp {
             }
         }
         else if (cmd === 0x12) {
-            // 【新增】处理单片机按键调整的倒计时长同步
-            this.timeCtrl.syncCdown(v[1]);
+            const mins = v[1];
+            const slCd = document.getElementById('cdSlider');
+            slCd.value = mins;
+            document.getElementById('cdVal').innerText = mins + ' 分钟';
+            UI.log(`[SYNC] 硬件按键触发 -> 倒计时已变更为 ${mins} 分钟`);
         }
     }
 
-    // 暴露给 HTML 行内点击事件的 API
     async bindDevice(addrType, macStr, type) {
         const payload = [0x06, addrType];
         for (let i = 0; i < macStr.length; i++) payload.push(macStr.charCodeAt(i));
         await BLEManager.sendCmd(payload);
 
-        // 发送记忆指令给 NVS
         setTimeout(() => {
             const memPayload = [0x14, type];
             for (let i = 0; i < macStr.length; i++) memPayload.push(macStr.charCodeAt(i));
@@ -230,5 +211,4 @@ class PixelApp {
     }
 }
 
-// 挂载全局启动
 window.onload = () => { window.AppController = new PixelApp(); };
