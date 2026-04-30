@@ -290,10 +290,12 @@ void loop()
 {
   ButtonManager_Loop();
 
+  // ================= 异步任务队列 =================
   if (AppState.pendingCmd != 0)
   {
     int cmd = AppState.pendingCmd;
     AppState.pendingCmd = 0;
+
     if (cmd == 5)
     {
       SensorHub_StartScan([](uint8_t t, uint8_t at, std::string m, std::string n)
@@ -309,8 +311,11 @@ void loop()
       SensorHub_DisconnectAll();
     else if (cmd == 10)
       SensorHub_TriggerAutoReconnect(true);
+    else if (cmd == 99)
+      AppState.factoryReset(); // 【新增】在安全的上下文环境中执行重置
   }
 
+  // ================= 时间守护进程 =================
   time_t now;
   struct tm timeinfo;
   time(&now);

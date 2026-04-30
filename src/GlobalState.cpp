@@ -1,14 +1,13 @@
 #include "GlobalState.h"
+#include <NimBLEDevice.h> // 【新增】必须引入此库以进行底层反初始化
 
 void AppStateManager::begin()
 {
     prefs.begin(NVS_NAMESPACE, false);
-
     brightness = prefs.getUChar("bright", BRIGHTNESS_DEFAULT);
     autoReconnect = prefs.getBool("autoRec", false);
     savedHrmMac = prefs.getString("macHrm", "").c_str();
     savedCscMac = prefs.getString("macCsc", "").c_str();
-
     for (int i = 0; i < 3; i++)
     {
         String prefix = "alm" + String(i);
@@ -57,7 +56,6 @@ void AppStateManager::saveAlarm(uint8_t idx, bool enabled, uint8_t h, uint8_t m)
     alarms[idx].enabled = enabled;
     alarms[idx].hour = h;
     alarms[idx].minute = m;
-
     String prefix = "alm" + String(idx);
     prefs.putBool((prefix + "_set").c_str(), true);
     prefs.putBool((prefix + "_en").c_str(), enabled);
@@ -82,12 +80,16 @@ void AppStateManager::clearSensorMac(uint8_t type)
     }
 }
 
-// 【新增实现】：核弹级恢复出厂设置
 void AppStateManager::factoryReset()
 {
-    Serial.println("\n[🧨 FACTORY RESET] 收到出厂重置指令，正在擦除 NVS 存储...");
-    prefs.clear(); // 彻底清空当前 namespace 下的所有键值对
-    Serial.println("[🧨 FACTORY RESET] 擦除完成，系统将在 1 秒后自动重启.");
-    delay(1000);
-    ESP.restart(); // 硬件软重启
+    Serial.println("\n[🧨 FACTORY RESET] 正在执行深度重置...");
+    prefs.clear();
+    delay(100);
+
+    // 【核心修复】：彻底释放蓝牙射频基带，防止重启后进入无法被搜索的僵尸状态
+    NimBLEDevice::deinit(true);
+    delay(500);
+
+    Serial.println("[🧨 FACTORY RESET] 擦除完成，系统重启中...");
+    ESP.restart(); // 安全重启
 }

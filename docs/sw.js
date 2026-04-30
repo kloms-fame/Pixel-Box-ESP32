@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pixel-box-v20'; // 【重点】：改动版本号，打碎手机旧缓存
+const CACHE_NAME = 'pixel-box-v21';
 
 const ASSETS = [
     './',

@@ -210,9 +210,9 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0xFF)
         {
-            // 【新增】处理恢复出厂设置
-            Serial.println("[🌐 WEB->ESP] 收到系统最高级指令：恢复出厂设置");
-            AppState.factoryReset();
+            // 【核心修复】：严禁在蓝牙中断上下文直接重启设备，必须推入安全队列
+            Serial.println("[🌐 WEB->ESP] 收到恢复出厂设置指令，加入主循环安全执行队列...");
+            AppState.pendingCmd = 99;
         }
     }
 };
