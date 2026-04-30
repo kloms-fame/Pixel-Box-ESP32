@@ -13,7 +13,6 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
     uint16_t charUUID = pChar->getUUID().getNative()->u16.value;
     uint8_t flags = pData[0];
 
-    // 【Debug】底层的每一次心跳报文都在此监控
     Serial.printf("\n[📥 SENSOR RAW] UUID: 0x%04X, Len: %d | HEX: ", charUUID, length);
     for (size_t i = 0; i < length; i++)
         Serial.printf("%02X ", pData[i]);
@@ -31,25 +30,17 @@ void notifySensorCallback(NimBLERemoteCharacteristic *pChar, uint8_t *pData, siz
         {
             uint16_t crankRevs = pData[offset] | (pData[offset + 1] << 8);
             uint16_t crankTime = pData[offset + 2] | (pData[offset + 3] << 8);
-
             if (lastCrankTime != 0 && crankTime != lastCrankTime)
             {
-                // 【核心修复】强制类型转换为 uint16_t，利用无符号数溢出特性完美解决 Rollover 翻转问题！
+                // 解决 65533 塌陷问题
                 uint16_t timeDiff = (uint16_t)(crankTime - lastCrankTime);
                 uint16_t revsDiff = (uint16_t)(crankRevs - lastCrankRevs);
-
                 if (timeDiff > 0)
                 {
-                    // 先转为 32位 运算防止乘法阶段溢出
                     AppState.currentCadence = (uint16_t)(((uint32_t)revsDiff * 60 * 1024) / timeDiff);
                     AppState.lastCrankSysTime = millis();
-                    Serial.printf("[🚴 CSC PARSED] 踏频更新: %d rpm (圈数增量: %u, 时间增量: %u)\n", AppState.currentCadence, revsDiff, timeDiff);
+                    Serial.printf("[🚴 CSC PARSED] 踏频更新: %d rpm (增量: %u 圈 / %u 单位时间)\n", AppState.currentCadence, revsDiff, timeDiff);
                 }
-            }
-            else if (crankTime == lastCrankTime)
-            {
-                // 曲柄时间没变，说明轮子没转 (通常发生在惯性滑行或完全停止时)
-                Serial.println("[🚴 CSC STATIC] 传感器已发送数据，但曲柄时间戳未变 (滑行/静止中)");
             }
             lastCrankRevs = crankRevs;
             lastCrankTime = crankTime;
@@ -61,11 +52,11 @@ class ClientCallbacks : public NimBLEClientCallbacks
 {
     void onConnect(NimBLEClient *pClient) override
     {
-        Serial.printf("[✅ CLIENT CONNECTED] 已成功连接至设备: %s\n", pClient->getPeerAddress().toString().c_str());
+        Serial.printf("[✅ CONNECTED] 已连接外设: %s\n", pClient->getPeerAddress().toString().c_str());
     }
     void onDisconnect(NimBLEClient *pClient) override
     {
-        Serial.printf("[❌ CLIENT DISCONNECTED] 设备连接已断开: %s\n", pClient->getPeerAddress().toString().c_str());
+        Serial.printf("[❌ DISCONNECTED] 外设断开: %s\n", pClient->getPeerAddress().toString().c_str());
         for (auto it = activeClients.begin(); it != activeClients.end();)
         {
             if (*it == pClient)
@@ -75,7 +66,6 @@ class ClientCallbacks : public NimBLEClientCallbacks
         }
         if (activeClients.empty())
         {
-            Serial.println("[🧹 AUTO CLEAN] 所有外设已断开，自动清理数据缓存");
             AppState.currentHR = 0;
             AppState.currentCadence = 0;
             if (AppState.currentMode == MODE_SENSOR)
@@ -83,6 +73,7 @@ class ClientCallbacks : public NimBLEClientCallbacks
                 Display_Clear();
                 Display_Show();
             }
+            Serial.println("[🧹 AUTO CLEAN] 所有外设已离线，清空数据缓存");
         }
     }
 };
@@ -100,9 +91,7 @@ class ProxyScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
             else if (device->isAdvertisingService(NimBLEUUID(UUID_CSC_SVC)))
                 type = 2;
 
-            Serial.printf("[📡 SCAN HIT] MAC: %s, RSSI: %d, Type: %d, Name: %s\n",
-                          device->getAddress().toString().c_str(), device->getRSSI(), type, device->getName().c_str());
-
+            Serial.printf("[📡 SCAN HIT] MAC: %s, Name: %s\n", device->getAddress().toString().c_str(), device->getName().c_str());
             if (activeScanCb)
                 activeScanCb(type, device->getAddress().getType(), device->getAddress().toString(), device->getName());
         }
@@ -110,21 +99,54 @@ class ProxyScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
 };
 ProxyScanCallbacks proxyScanCb;
 
+class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
+{
+    void onResult(NimBLEAdvertisedDevice *device)
+    {
+        string mac = device->getAddress().toString();
+        if (AppState.autoReconnect)
+        {
+            if (mac == AppState.savedHrmMac || mac == AppState.savedCscMac)
+            {
+                Serial.printf("[⚡ AUTO-RECONNECT] 发现历史设备 %s，即将直连！\n", mac.c_str());
+                AppState.pendingAddr = device->getAddress();
+                AppState.pendingCmd = 6;
+            }
+        }
+    }
+};
+AutoReconnectScanCallbacks autoScanCb;
+
 void SensorHub_StartScan(ScanCallbackFunc cb)
 {
-    Serial.println("\n[🔍 SYS_SCAN] 启动底层物理广播扫描...");
+    Serial.println("\n[🔍 SYS_SCAN] 启动物理层广域扫描...");
     activeScanCb = cb;
     NimBLEScan *pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(&proxyScanCb);
     pScan->setActiveScan(true);
     pScan->start(5, false);
     pScan->clearResults();
-    Serial.println("[🔍 SYS_SCAN] 物理扫描周期结束.");
+    Serial.println("[🔍 SYS_SCAN] 物理扫描结束.");
+}
+
+void SensorHub_TriggerAutoReconnect()
+{
+    if (!AppState.autoReconnect || (AppState.savedHrmMac == "" && AppState.savedCscMac == ""))
+    {
+        Serial.println("[⏭️ AUTO-RECONNECT] 未开启自动重连或无历史记录，跳过.");
+        return;
+    }
+    Serial.println("\n[🔍 AUTO-RECONNECT] 后台寻呼历史绑定设备中...");
+    NimBLEScan *pScan = NimBLEDevice::getScan();
+    pScan->setAdvertisedDeviceCallbacks(&autoScanCb);
+    pScan->setActiveScan(true);
+    pScan->start(5, false);
+    pScan->clearResults();
 }
 
 void SensorHub_Connect(NimBLEAddress addr)
 {
-    Serial.printf("\n[🔗 CONNECT INIT] 正在与 MAC: %s 建立物理链路...\n", addr.toString().c_str());
+    Serial.printf("\n[🔗 CONNECT INIT] 尝试直连 MAC: %s\n", addr.toString().c_str());
     NimBLEClient *pClient = NimBLEDevice::createClient();
     pClient->setClientCallbacks(&clientCB, false);
     pClient->setConnectTimeout(10);
@@ -132,41 +154,34 @@ void SensorHub_Connect(NimBLEAddress addr)
 
     if (!pClient->connect(addr))
     {
-        Serial.printf("[⚠️ EXCEPTION] 物理连接建立失败! 请确认设备未被手机占用且处于唤醒状态 (MAC: %s)\n", addr.toString().c_str());
+        Serial.printf("[⚠️ EXCEPTION] 连接失败! 设备可能未唤醒 (MAC: %s)\n", addr.toString().c_str());
         NimBLEDevice::deleteClient(pClient);
         return;
     }
-
     activeClients.push_back(pClient);
     AppState.currentMode = MODE_SENSOR;
     Display_Clear();
-    Display_Show(); // 立刻清屏过渡
+    Display_Show();
 
     NimBLERemoteService *pSvcHRM = pClient->getService(NimBLEUUID(UUID_HRM_SVC));
     if (pSvcHRM)
     {
         auto pChr = pSvcHRM->getCharacteristic(NimBLEUUID(UUID_HRM_CHAR));
         if (pChr && pChr->canNotify())
-        {
             pChr->subscribe(true, notifySensorCallback);
-            Serial.println("[✅ SUBSCRIBE] 订阅 HRM 心率数据流成功");
-        }
     }
     NimBLERemoteService *pSvcCSC = pClient->getService(NimBLEUUID(UUID_CSC_SVC));
     if (pSvcCSC)
     {
         auto pChr = pSvcCSC->getCharacteristic(NimBLEUUID(UUID_CSC_CHAR));
         if (pChr && pChr->canNotify())
-        {
             pChr->subscribe(true, notifySensorCallback);
-            Serial.println("[✅ SUBSCRIBE] 订阅 CSC 踏频数据流成功");
-        }
     }
 }
 
 void SensorHub_Disconnect(NimBLEAddress addr)
 {
-    Serial.printf("\n[✂️ DISCONNECT INIT] 执行强制断开 MAC: %s\n", addr.toString().c_str());
+    Serial.printf("\n[✂️ DISCONNECT INIT] 强制切断 MAC: %s\n", addr.toString().c_str());
     for (auto pClient : activeClients)
     {
         if (pClient->getPeerAddress() == addr)
@@ -175,7 +190,6 @@ void SensorHub_Disconnect(NimBLEAddress addr)
             return;
         }
     }
-    Serial.println("[⚠️ EXCEPTION] 未找到该设备的活动链路");
 }
 
 int SensorHub_GetActiveClientCount() { return activeClients.size(); }

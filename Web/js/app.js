@@ -1,111 +1,186 @@
-const AppController = {
-    init() {
-        UIManager.init();
+class PixelApp {
+    constructor() {
+        this.initPWA();
+        this.initDOM();
         this.bindEvents();
-        UIManager.log("SYSTEM_READY: Waiting for BLE handshake.");
-    },
+    }
+
+    initPWA() {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').then(() => {
+                document.getElementById('pwaBadge').style.display = 'inline-block';
+            });
+        }
+    }
+
+    initDOM() {
+        // 初始化时注入闹钟DOM，确保后续 ID 获取绝不会报错
+        const container = document.getElementById('alarmContainer');
+        container.innerHTML = '';
+        for (let i = 0; i < 3; i++) {
+            container.innerHTML += `
+        <div class="list-item" style="background:#000; padding:12px; border-radius:4px; margin-bottom:8px; border:1px solid var(--border);">
+          <div style="display:flex; flex-direction:column; gap:8px;">
+            <span style="font-weight:bold; color:var(--text-main);">ALM_NODE_${i + 1}</span>
+            <input type="time" id="almTime${i}" class="ctrl-btn" disabled>
+          </div>
+          <div style="display: flex; gap: 12px; align-items: center;">
+            <label class="toggle-switch">
+              <input type="checkbox" id="almEn${i}" class="ctrl-btn" disabled>
+              <span class="slider-round"></span>
+            </label>
+            <button id="almBtn${i}" class="btn-success ctrl-btn" disabled style="margin: 0; flex-grow:0; padding:6px 12px;">注入配置</button>
+          </div>
+        </div>`;
+        }
+    }
 
     bindEvents() {
-        // ---- 系统连接路由 ----
+        // ====== 蓝牙系统控制 ======
         document.getElementById('btnConnect').onclick = async () => {
             try {
-                UIManager.log("NEGOTIATING HANDSHAKE...");
-                // 传入两个回调：收到数据、断开连接
-                const name = await BLEManager.connect(this.handleGatewayRx, this.handleDisconnect);
-                UIManager.setConnectState(true);
-                UIManager.log(`LINK_ESTABLISHED: ${name}`);
-            } catch (e) {
-                UIManager.log(`ERR_CONNECT: ${e.message}`);
-            }
+                UI.log("NEGOTIATING HANDSHAKE...");
+                const name = await BLEManager.connect(this.handleRx.bind(this), this.handleDisconnect.bind(this));
+
+                UI.setConnectState(true);
+                document.getElementById('btnConnect').style.display = 'none';
+
+                const btnDisc = document.getElementById('btnDisconnect');
+                btnDisc.style.display = 'block';
+                btnDisc.disabled = false; // 强行解除禁用状态，避免被 setConnectState 误杀
+
+                UI.log(`LINK_ESTABLISHED: ${name}，请求 NVS 快照...`);
+                // 拉取 NVS 快照
+                setTimeout(() => BLEManager.sendCmd([0x10]), 500);
+
+            } catch (e) { UI.log(`ERR_CONNECT: ${e.message}`); }
         };
+
         document.getElementById('btnDisconnect').onclick = () => BLEManager.disconnect();
 
-        // ---- UI 切屏控制路由 ----
-        document.getElementById('btnUiClock').onclick = () => {
-            const now = new Date();
-            const ts = Math.floor((now.getTime() - now.getTimezoneOffset() * 60000) / 1000);
-            BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
-            UIManager.log("CMD: SWAP_UI -> CLOCK_MODE");
-        };
-        document.getElementById('btnUiSensor').onclick = () => { BLEManager.sendCmd([0x08]); UIManager.log("CMD: SWAP_UI -> SENSOR"); };
-        document.getElementById('btnUiTimer').onclick = () => { BLEManager.sendCmd([0x09]); UIManager.log("CMD: SWAP_UI -> STOPWATCH"); };
-        document.getElementById('btnUiCdown').onclick = () => { BLEManager.sendCmd([0x0B]); UIManager.log("CMD: SWAP_UI -> COUNTDOWN"); };
-        document.getElementById('btnUiAlarm').onclick = () => { BLEManager.sendCmd([0x0E]); UIManager.log("CMD: SWAP_UI -> ALARM_MATRIX"); };
-        document.getElementById('btnUiOff').onclick = () => { BLEManager.sendCmd([0x03]); UIManager.log("CMD: SWAP_UI -> SCREEN_OFF"); };
-
-        // ---- 亮度滑动条路由 ----
-        const slBright = document.getElementById('slBrightness');
-        const valBright = document.getElementById('valBrightness');
-        slBright.oninput = (e) => valBright.innerText = e.target.value;
-        slBright.onchange = (e) => {
+        // ====== 系统参数 (亮度 & 自动重连) ======
+        const brightSlider = document.getElementById('brightSlider');
+        brightSlider.oninput = (e) => document.getElementById('brightVal').innerText = e.target.value;
+        brightSlider.onchange = (e) => {
             BLEManager.sendCmd([0x01, parseInt(e.target.value)]);
-            UIManager.log(`CMD: BRIGHTNESS -> ${e.target.value}`);
+            UI.log(`CMD: BRIGHTNESS_SET_TO -> ${e.target.value}`);
         };
 
-        // ---- 雷达探测路由 ----
-        document.getElementById('btnScan').onclick = () => {
-            UIManager.clearRadar();
+        document.getElementById('autoRecEn').onchange = (e) => {
+            BLEManager.sendCmd([0x13, e.target.checked ? 1 : 0]);
+            UI.log(`CMD: AUTO_RECONNECT -> ${e.target.checked ? 'ENABLED' : 'DISABLED'}`);
+        };
+
+        // ====== UI 路由 ======
+        document.getElementById('syncTimeBtn').onclick = () => {
+            const d = new Date(); const ts = Math.floor((d.getTime() - d.getTimezoneOffset() * 60000) / 1000);
+            BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
+            UI.log("CMD: SWAP_UI -> CLOCK_MODE");
+        };
+        document.getElementById('showDataBtn').onclick = () => { BLEManager.sendCmd([0x08]); UI.log("CMD: SWAP_UI -> SENSOR_DATA"); };
+        document.getElementById('timerModeBtn').onclick = () => { BLEManager.sendCmd([0x09]); UI.log("CMD: SWAP_UI -> STOPWATCH"); };
+        document.getElementById('countdownModeBtn').onclick = () => { BLEManager.sendCmd([0x0B]); UI.log("CMD: SWAP_UI -> COUNTDOWN"); };
+        document.getElementById('alarmModeBtn').onclick = () => { BLEManager.sendCmd([0x0E]); UI.log("CMD: SWAP_UI -> ALARM_MATRIX"); };
+        document.getElementById('clearBtn').onclick = () => { BLEManager.sendCmd([0x03]); UI.log("CMD: SWAP_UI -> SCREEN_OFF"); };
+
+        // ====== 传感器雷达 ======
+        document.getElementById('scanBtn').onclick = () => {
+            UI.clearRadar();
             BLEManager.sendCmd([0x05]);
-            UIManager.log("CMD: PROXY_SCAN_DISPATCHED");
+            UI.log("CMD: FULL_PROXY_SCAN_DISPATCHED");
         };
 
-        // ---- 秒表时间序列路由 ----
-        document.getElementById('btnTmStart').onclick = () => { BLEManager.sendCmd([0x0A, 0x01]); UIManager.log("CMD: STOPWATCH -> RUN"); };
-        document.getElementById('btnTmPause').onclick = () => { BLEManager.sendCmd([0x0A, 0x00]); UIManager.log("CMD: STOPWATCH -> PAUSE"); };
-        document.getElementById('btnTmReset').onclick = () => { BLEManager.sendCmd([0x0A, 0x02]); UIManager.log("CMD: STOPWATCH -> RESET"); };
+        // ====== 闹钟写入绑定 ======
+        for (let i = 0; i < 3; i++) {
+            document.getElementById(`almBtn${i}`).onclick = () => {
+                const timeVal = document.getElementById(`almTime${i}`).value;
+                const enabled = document.getElementById(`almEn${i}`).checked ? 1 : 0;
+                if (!timeVal) { UI.log(`ERR: 第 ${i + 1} 组未配置时间!`); return; }
+                const [h, m] = timeVal.split(':').map(Number);
+                BLEManager.sendCmd([0x0F, i, enabled, h, m]);
+                UI.log(`CMD: ALARM_SET -> IDX:${i + 1} TIME:${timeVal} EN:${enabled}`);
+            };
+        }
 
-        // ---- 倒计时引擎路由 ----
-        const slCd = document.getElementById('slCdown');
-        const valCd = document.getElementById('valCdown');
-        slCd.oninput = (e) => valCd.innerText = e.target.value + ' Min';
-        document.getElementById('btnCdApply').onclick = () => { BLEManager.sendCmd([0x0C, parseInt(slCd.value)]); UIManager.log(`CMD: CDOWN_CFG -> ${slCd.value} MINS`); };
-        document.getElementById('btnCdStart').onclick = () => { BLEManager.sendCmd([0x0D, 0x01]); UIManager.log("CMD: CDOWN -> RUN"); };
-        document.getElementById('btnCdPause').onclick = () => { BLEManager.sendCmd([0x0D, 0x00]); UIManager.log("CMD: CDOWN -> PAUSE"); };
-        document.getElementById('btnCdReset').onclick = () => { BLEManager.sendCmd([0x0D, 0x02]); UIManager.log("CMD: CDOWN -> RESET"); };
-    },
+        // ====== 秒表 ======
+        document.getElementById('timerStartBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x01]); UI.log("CMD: STOPWATCH -> RUN"); };
+        document.getElementById('timerPauseBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x00]); UI.log("CMD: STOPWATCH -> PAUSE"); };
+        document.getElementById('timerResetBtn').onclick = () => { BLEManager.sendCmd([0x0A, 0x02]); UI.log("CMD: STOPWATCH -> RESET"); };
 
-    // ---- 接收单片机回传报文 ----
-    handleGatewayRx(e) {
+        // ====== 倒计时 ======
+        const cdSlider = document.getElementById('cdSlider');
+        cdSlider.oninput = (e) => document.getElementById('cdVal').innerText = e.target.value + ' 分钟';
+        document.getElementById('cdApplyBtn').onclick = () => { BLEManager.sendCmd([0x0C, parseInt(cdSlider.value)]); UI.log(`CMD: CDOWN_CFG -> ${cdSlider.value} MINS`); };
+        document.getElementById('cdStartBtn').onclick = () => { BLEManager.sendCmd([0x0D, 0x01]); UI.log("CMD: COUNTDOWN -> RUN"); };
+        document.getElementById('cdPauseBtn').onclick = () => { BLEManager.sendCmd([0x0D, 0x00]); UI.log("CMD: COUNTDOWN -> PAUSE"); };
+        document.getElementById('cdResetBtn').onclick = () => { BLEManager.sendCmd([0x0D, 0x02]); UI.log("CMD: COUNTDOWN -> RESET"); };
+    }
+
+    handleDisconnect() {
+        UI.setConnectState(false);
+        document.getElementById('btnConnect').style.display = 'block';
+        document.getElementById('btnDisconnect').style.display = 'none';
+        UI.log("LINK_TERMINATED: 设备已离线");
+    }
+
+    // 接收并解析来自 ESP32 的所有报文 (包含握手同步报文)
+    handleRx(e) {
         const v = new Uint8Array(e.target.value.buffer);
-        if (v[0] === 0x05) { // 扫描报文 0x05 解析
+        const cmd = v[0];
+
+        if (cmd === 0x05) {
+            // 扫描结果返回
             const type = v[1]; const addrType = v[2]; const macLen = v[3];
             const macStr = new TextDecoder().decode(v.slice(4, 4 + macLen));
             const name = new TextDecoder().decode(v.slice(4 + macLen));
-            UIManager.addRadarDevice(type, addrType, macStr, name);
+            UI.addRadarDevice(type, addrType, macStr, name);
         }
-    },
+        else if (cmd === 0x10) {
+            // 基础配置 NVS 同步
+            const bright = v[2];
+            const autoRec = v[3];
+            document.getElementById('brightSlider').value = bright;
+            document.getElementById('brightVal').innerText = bright;
+            document.getElementById('autoRecEn').checked = (autoRec === 1);
+            UI.log("[SYNC] 基础配置已同步至 Web");
+        }
+        else if (cmd === 0x11) {
+            // 闹钟矩阵 NVS 同步
+            const idx = v[1];
+            const isSet = v[2];
+            const enabled = v[3];
+            const h = v[4];
+            const m = v[5];
+            if (isSet === 1) {
+                document.getElementById(`almTime${idx}`).value = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+                document.getElementById(`almEn${idx}`).checked = (enabled === 1);
+            }
+        }
+    }
 
-    // ---- 异常掉线处理 ----
-    handleDisconnect() {
-        UIManager.setConnectState(false);
-        UIManager.log("LINK_TERMINATED: Gateway offline");
-    },
-
-    // ---- 对外暴露 API (供 HTML 行内 onclick 调用) ----
-    async bindDevice(addrType, macStr) {
+    // 暴露给 HTML 行内点击事件的 API
+    async bindDevice(addrType, macStr, type) {
         const payload = [0x06, addrType];
         for (let i = 0; i < macStr.length; i++) payload.push(macStr.charCodeAt(i));
         await BLEManager.sendCmd(payload);
-        UIManager.log(`CMD: BIND_SENSOR -> [${macStr}]`);
-    },
+
+        // 发送记忆指令给 NVS
+        setTimeout(() => {
+            const memPayload = [0x14, type];
+            for (let i = 0; i < macStr.length; i++) memPayload.push(macStr.charCodeAt(i));
+            BLEManager.sendCmd(memPayload);
+        }, 300);
+
+        UI.log(`CMD: BINDING_ISSUED -> [${macStr}]`);
+    }
 
     async dropDevice(addrType, macStr) {
         const payload = [0x07, addrType];
         for (let i = 0; i < macStr.length; i++) payload.push(macStr.charCodeAt(i));
         await BLEManager.sendCmd(payload);
-        UIManager.log(`CMD: DROP_SENSOR -> [${macStr}]`);
-    },
-
-    async setAlarm(idx) {
-        const timeVal = document.getElementById(`almTime${idx}`).value;
-        const enabled = document.getElementById(`almEn${idx}`).checked ? 1 : 0;
-        if (!timeVal) { UIManager.log(`ERR: ALM_NODE_${idx + 1} lacks timestamp`); return; }
-        const [h, m] = timeVal.split(':').map(Number);
-        await BLEManager.sendCmd([0x0F, idx, enabled, h, m]);
-        UIManager.log(`CMD: ALARM_SET -> IDX:${idx + 1} TIME:${timeVal} EN:${enabled}`);
+        UI.log(`CMD: DROP_ISSUED -> [${macStr}]`);
     }
-};
+}
 
-// 挂载全局环境并启动
-window.AppController = AppController;
-window.onload = () => AppController.init();
+// 挂载全局启动
+window.onload = () => { window.AppController = new PixelApp(); };

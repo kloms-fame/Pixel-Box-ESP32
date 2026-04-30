@@ -6,9 +6,6 @@
 #include "SensorHub.h"
 #include "WebGateway.h"
 
-SharedState AppState;
-
-// ================== UI 渲染子模块 ==================
 void renderClock()
 {
   static unsigned long lastUpdate = 0;
@@ -19,7 +16,6 @@ void renderClock()
     struct tm timeinfo;
     time(&now);
     localtime_r(&now, &timeinfo);
-
     Display_Clear();
     CRGB c = CRGB(0, 180, 255);
     Display_DrawDigit(0, 1, timeinfo.tm_hour / 10, c);
@@ -38,7 +34,6 @@ void renderClock()
 void renderSensor()
 {
   static unsigned long lastFrame = 0;
-  // 【修复】控制在 10 FPS 渲染，彻底剔除 delay()
   if (millis() - lastFrame < 100)
     return;
   lastFrame = millis();
@@ -112,7 +107,6 @@ void renderTimer()
     uint16_t secs = ms / 1000;
     uint8_t m = (secs / 60) % 100;
     uint8_t s = secs % 60;
-
     Display_Clear();
     CRGB c = CRGB(255, 150, 0);
     Display_DrawDigit(0, 1, m / 10, c);
@@ -240,19 +234,22 @@ void renderAlarm()
   }
 }
 
-// ================== 系统生命周期 ==================
 void setup()
 {
   Serial.begin(115200);
+
+  // 初始化顺序至关重要
+  AppState.begin();
   NimBLEDevice::init(BLE_DEVICE_NAME);
   Display_Init();
   WebGateway_Init();
-  Serial.println("🚀 Pixel-Box Modular Core Ready. [Lag & Connect Patched]");
+
+  Serial.println("🚀 Pixel-Box OS Core Ready. [NVS + Sync + AutoRecon]");
+  SensorHub_TriggerAutoReconnect();
 }
 
 void loop()
 {
-  // 1. 底层解耦任务处理
   if (AppState.pendingCmd != 0)
   {
     int cmd = AppState.pendingCmd;
@@ -268,7 +265,6 @@ void loop()
       SensorHub_Disconnect(AppState.pendingAddr);
   }
 
-  // 2. 守护进程 (时间获取、倒计时清零计算、闹钟触发)
   time_t now;
   struct tm timeinfo;
   time(&now);
@@ -286,7 +282,7 @@ void loop()
         AppState.alarms[i].ringStartSysTime = millis();
         AppState.currentMode = MODE_ALARM;
         AppState.alarmDisplayIndex = i;
-        Serial.printf("[⏰ ALARM FIRE] 守护进程: 闹钟 %d 已触发！\n", i + 1);
+        Serial.printf("[⏰ ALARM FIRE] 闹钟 %d 触发！\n", i + 1);
       }
     }
   }
@@ -304,11 +300,10 @@ void loop()
       AppState.isCountdownFinished = true;
       AppState.countdownFinishSysTime = millis();
       AppState.currentMode = MODE_COUNTDOWN;
-      Serial.println("[⏳ CDOWN FIRE] 守护进程: 倒计时结束，强行介入 UI！");
+      Serial.println("[⏳ CDOWN FIRE] 倒计时结束触发！");
     }
   }
 
-  // 3. UI 路由调度
   switch (AppState.currentMode)
   {
   case MODE_CLOCK:
@@ -327,9 +322,7 @@ void loop()
     renderAlarm();
     break;
   case MODE_OFF:
-    break; // 【修复】不产生任何阻塞动作
+    break;
   }
-
-  // 微小延时交出 CPU 使用权给后台蓝牙协议栈
   delay(10);
 }

@@ -14,7 +14,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         std::string rx = pChar->getValue();
         if (rx.length() == 0)
             return;
-
         uint8_t cmd = (uint8_t)rx[0];
 
         Serial.printf("\n[🌐 WEB->ESP] 收到报文 CMD: 0x%02X, 长度: %d bytes\n", cmd, rx.length());
@@ -23,14 +22,14 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         {
             Display_SetBrightness(rx[1]);
             Display_Show();
-            Serial.printf("[🔆 UI] 亮度调整为: %d\n", rx[1]);
+            AppState.saveBrightness(rx[1]);
+            Serial.printf("[🔆 UI] 亮度配置已下发: %d\n", rx[1]);
         }
         else if (cmd == 0x02 && rx.length() >= 4)
         {
             Display_Fill(CRGB(rx[1], rx[2], rx[3]));
             Display_Show();
             AppState.currentMode = MODE_OFF;
-            Serial.println("[📺 UI] 执行全屏纯色填充");
         }
         else if (cmd == 0x03)
         {
@@ -47,38 +46,38 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.currentMode = MODE_CLOCK;
             Display_Clear();
             Display_Show();
-            Serial.printf("[🕒 UI] 时间已同步(TS: %u)，切至时钟模式\n", ts);
+            Serial.println("[🕒 UI] 时间同步，切入时钟模式");
         }
         else if (cmd == 0x05)
         {
             AppState.pendingCmd = 5;
-            Serial.println("[⚡ TASK] 雷达扫描任务入队");
+            Serial.println("[⚡ TASK] 雷达扫描入队");
         }
         else if (cmd == 0x06 && rx.length() > 2)
         {
             AppState.pendingAddr = NimBLEAddress(rx.substr(2), rx[1]);
             AppState.pendingCmd = 6;
-            Serial.printf("[⚡ TASK] 连接指令入队, 目标 MAC: %s\n", rx.substr(2).c_str());
+            Serial.printf("[⚡ TASK] 连接指令入队 -> %s\n", rx.substr(2).c_str());
         }
         else if (cmd == 0x07 && rx.length() > 2)
         {
             AppState.pendingAddr = NimBLEAddress(rx.substr(2), rx[1]);
             AppState.pendingCmd = 7;
-            Serial.printf("[⚡ TASK] 断开指令入队, 目标 MAC: %s\n", rx.substr(2).c_str());
+            Serial.printf("[⚡ TASK] 断开指令入队 -> %s\n", rx.substr(2).c_str());
         }
         else if (cmd == 0x08)
         {
             AppState.currentMode = MODE_SENSOR;
             Display_Clear();
             Display_Show();
-            Serial.println("[🚴 UI] 切至运动数据面板");
+            Serial.println("[🚴 UI] 运动数据面板");
         }
         else if (cmd == 0x09)
         {
             AppState.currentMode = MODE_TIMER;
             Display_Clear();
             Display_Show();
-            Serial.println("[⏱️ UI] 切至秒表面板");
+            Serial.println("[⏱️ UI] 秒表面板");
         }
         else if (cmd == 0x0A && rx.length() >= 2)
         {
@@ -88,26 +87,16 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                 AppState.timerStartTime = millis();
                 AppState.isTimerRunning = true;
                 AppState.currentMode = MODE_TIMER;
-                Serial.println("[▶️ TIMER] 秒表开始/恢复");
             }
-            else if (action == 0x00)
+            else if (action == 0x00 && AppState.isTimerRunning)
             {
-                if (AppState.isTimerRunning)
-                {
-                    AppState.timerElapsed += millis() - AppState.timerStartTime;
-                    AppState.isTimerRunning = false;
-                    Serial.println("[⏸️ TIMER] 秒表已暂停");
-                }
-                else
-                {
-                    Serial.println("[⏸️ TIMER-IGNORE] 秒表已经是暂停状态，忽略指令");
-                }
+                AppState.timerElapsed += millis() - AppState.timerStartTime;
+                AppState.isTimerRunning = false;
             }
             else if (action == 0x02)
             {
                 AppState.timerElapsed = 0;
                 AppState.isTimerRunning = false;
-                Serial.println("[🔄 TIMER] 秒表强制重置归零");
             }
         }
         else if (cmd == 0x0B)
@@ -115,7 +104,7 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.currentMode = MODE_COUNTDOWN;
             Display_Clear();
             Display_Show();
-            Serial.println("[⏳ UI] 切至倒计时面板");
+            Serial.println("[⏳ UI] 倒计表面板");
         }
         else if (cmd == 0x0C && rx.length() >= 2)
         {
@@ -123,7 +112,7 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             AppState.countdownRemaining = AppState.countdownTotalSeconds;
             AppState.isCountdownRunning = AppState.isCountdownFinished = false;
             AppState.currentMode = MODE_COUNTDOWN;
-            Serial.printf("[⏳ CDOWN] 倒计时预设时长更新为: %d 分钟\n", rx[1]);
+            Serial.printf("[⏳ CDOWN] 倒计时预设更新为: %d 分钟\n", rx[1]);
         }
         else if (cmd == 0x0D && rx.length() >= 2)
         {
@@ -134,27 +123,17 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                 AppState.isCountdownRunning = true;
                 AppState.isCountdownFinished = false;
                 AppState.currentMode = MODE_COUNTDOWN;
-                Serial.println("[▶️ CDOWN] 倒计时开始运转");
             }
-            else if (action == 0x00)
+            else if (action == 0x00 && AppState.isCountdownRunning)
             {
-                if (AppState.isCountdownRunning)
-                {
-                    uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
-                    AppState.countdownRemaining = (elapsed < AppState.countdownRemaining) ? (AppState.countdownRemaining - elapsed) : 0;
-                    AppState.isCountdownRunning = false;
-                    Serial.printf("[⏸️ CDOWN] 倒计时已暂停, 剩余: %u 秒\n", AppState.countdownRemaining);
-                }
-                else
-                {
-                    Serial.println("[⏸️ CDOWN-IGNORE] 倒计时未在运转，忽略暂停指令");
-                }
+                uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
+                AppState.countdownRemaining = (elapsed < AppState.countdownRemaining) ? (AppState.countdownRemaining - elapsed) : 0;
+                AppState.isCountdownRunning = false;
             }
             else if (action == 0x02)
             {
                 AppState.countdownRemaining = AppState.countdownTotalSeconds;
                 AppState.isCountdownRunning = AppState.isCountdownFinished = false;
-                Serial.println("[🔄 CDOWN] 倒计时重置回初始时长");
             }
         }
         else if (cmd == 0x0E)
@@ -168,21 +147,45 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             }
             Display_Clear();
             Display_Show();
-            Serial.printf("[⏰ UI] 切至硬件闹钟检视面板, 当前检视组别: %d\n", AppState.alarmDisplayIndex + 1);
+            Serial.printf("[⏰ UI] 切至硬件闹钟检视, 组别: %d\n", AppState.alarmDisplayIndex + 1);
         }
         else if (cmd == 0x0F && rx.length() >= 5)
         {
             uint8_t idx = rx[1];
             if (idx < 3)
             {
-                AppState.alarms[idx].isSet = true;
-                AppState.alarms[idx].enabled = rx[2];
-                AppState.alarms[idx].hour = rx[3];
-                AppState.alarms[idx].minute = rx[4];
+                AppState.saveAlarm(idx, rx[2], rx[3], rx[4]);
                 AppState.alarms[idx].isRinging = false;
-                Serial.printf("[⏰ SET] 闹钟配置成功写入内存 -> 组别: %d, 状态: %s, 时间: %02d:%02d\n",
-                              idx + 1, rx[2] ? "✅启用" : "❌禁用", rx[3], rx[4]);
             }
+        }
+        else if (cmd == 0x10)
+        {
+            Serial.println("[🤝 SYNC] Web建立连接，推送系统状态快照...");
+            vector<uint8_t> p1 = {0x10, (uint8_t)AppState.currentMode, AppState.brightness, (uint8_t)(AppState.autoReconnect ? 1 : 0)};
+            pTxCharacteristic->setValue(p1.data(), p1.size());
+            pTxCharacteristic->notify();
+            delay(50);
+            for (int i = 0; i < 3; i++)
+            {
+                AlarmData &a = AppState.alarms[i];
+                // 解决窄化转换警告
+                vector<uint8_t> p2 = {0x11, (uint8_t)i, (uint8_t)(a.isSet ? 1 : 0), (uint8_t)(a.enabled ? 1 : 0), a.hour, a.minute};
+                pTxCharacteristic->setValue(p2.data(), p2.size());
+                pTxCharacteristic->notify();
+                delay(50);
+            }
+            if (AppState.savedHrmMac != "")
+                WebGateway_SendScanResult(1, 0, AppState.savedHrmMac, "NVS_已存心率");
+            if (AppState.savedCscMac != "")
+                WebGateway_SendScanResult(2, 0, AppState.savedCscMac, "NVS_已存踏频");
+        }
+        else if (cmd == 0x13 && rx.length() >= 2)
+        {
+            AppState.saveAutoReconnect(rx[1] == 1);
+        }
+        else if (cmd == 0x14 && rx.length() > 2)
+        {
+            AppState.saveSensorMac(rx[1], rx.substr(2));
         }
     }
 };
