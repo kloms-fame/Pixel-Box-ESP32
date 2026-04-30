@@ -1,5 +1,6 @@
-const CACHE_NAME = 'pixel-box-v8-offline';
-// 这里写死你需要离线缓存的所有文件路径
+// ⚠️ 每次你的 UI 或 JS 有大修改时，只要把这里的版本号 +1，就能强制所有用户的手机更新
+const CACHE_NAME = 'pixel-box-v16';
+
 const ASSETS = [
     './',
     './index.html',
@@ -7,21 +8,18 @@ const ASSETS = [
     './css/style.css',
     './js/ble.js',
     './js/ui.js',
+    './js/controllers.js',
     './js/app.js'
 ];
 
-// 安装阶段：强制预缓存所有文件
 self.addEventListener('install', (e) => {
     self.skipWaiting();
     e.waitUntil(
-        caches.open(CACHE_NAME).then((cache) => {
-            console.log('[Service Worker] Caching all assets');
-            return cache.addAll(ASSETS);
-        })
+        caches.open(CACHE_NAME).then((cache) => cache.addAll(ASSETS))
     );
 });
 
-// 激活阶段：清理旧版本缓存
+// 激活新版本时，自动清理旧版本的垃圾缓存
 self.addEventListener('activate', (e) => {
     e.waitUntil(
         caches.keys().then((keyList) => {
@@ -30,14 +28,24 @@ self.addEventListener('activate', (e) => {
             }));
         })
     );
+    return self.clients.claim();
 });
 
-// 抓取阶段：断网时优先从缓存读取
+// 【核心修复】：改为“网络优先 (Network First)”策略
 self.addEventListener('fetch', (e) => {
     e.respondWith(
-        caches.match(e.request).then((cachedResponse) => {
-            // 如果缓存里有，直接给缓存（断网也能秒开）；如果没有，再走网络请求
-            return cachedResponse || fetch(e.request);
-        })
+        fetch(e.request)
+            .then((response) => {
+                // 1. 如果手机有网，直接从 Github 获取最新代码，并悄悄更新到本地缓存
+                if (response && response.status === 200) {
+                    const responseClone = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(e.request, responseClone));
+                }
+                return response;
+            })
+            .catch(() => {
+                // 2. 如果手机断网了 (fetch 失败)，则瞬间回退使用上一次存好的本地缓存！
+                return caches.match(e.request);
+            })
     );
 });
