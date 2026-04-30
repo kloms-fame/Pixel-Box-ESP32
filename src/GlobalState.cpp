@@ -8,6 +8,11 @@ void AppStateManager::begin()
     autoReconnect = prefs.getBool("autoRec", false);
     savedHrmMac = prefs.getString("macHrm", "").c_str();
     savedCscMac = prefs.getString("macCsc", "").c_str();
+
+    // 【新增】开机从 NVS 读取 WiFi
+    wifiSSID = prefs.getString("wssID", "").c_str();
+    wifiPass = prefs.getString("wPass", "").c_str();
+
     for (int i = 0; i < 3; i++)
     {
         String prefix = "alm" + String(i);
@@ -80,16 +85,23 @@ void AppStateManager::clearSensorMac(uint8_t type)
     }
 }
 
+// 【新增】保存网络配置
+void AppStateManager::saveWiFi(string ssid, string pass)
+{
+    wifiSSID = ssid;
+    wifiPass = pass;
+    prefs.putString("wssID", String(ssid.c_str()));
+    prefs.putString("wPass", String(pass.c_str()));
+    Serial.println("[💾 NVS] WiFi 凭据已安全存入闪存");
+}
+
 void AppStateManager::factoryReset()
 {
-    Serial.println("\n[🧨 FACTORY RESET] 正在执行深度重置...");
+    Serial.println("\n[🧨 FACTORY RESET] 收到出厂重置指令，正在擦除 NVS 存储...");
     prefs.clear();
     delay(100);
-
-    // 【核心修复】：彻底释放蓝牙射频基带，防止重启后进入无法被搜索的僵尸状态
     NimBLEDevice::deinit(true);
     delay(500);
-
-    Serial.println("[🧨 FACTORY RESET] 擦除完成，系统重启中...");
-    ESP.restart(); // 安全重启
+    Serial.println("[🧨 FACTORY RESET] 擦除完成，系统将在 1 秒后自动重启.");
+    ESP.restart();
 }

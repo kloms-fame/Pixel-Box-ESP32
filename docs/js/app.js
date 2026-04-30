@@ -100,6 +100,34 @@ class PixelApp {
             };
         }
 
+        // ====== 【新增】WiFi 悬浮窗控制 ======
+        const wifiModal = document.getElementById('wifiModal');
+        const btnOpenWifi = document.getElementById('btnOpenWifi');
+        if (btnOpenWifi) {
+            btnOpenWifi.onclick = () => { wifiModal.style.display = 'flex'; };
+        }
+        if (document.getElementById('btnWifiClose')) {
+            document.getElementById('btnWifiClose').onclick = () => { wifiModal.style.display = 'none'; };
+        }
+
+        if (document.getElementById('btnWifiSave')) {
+            document.getElementById('btnWifiSave').onclick = async () => {
+                const ssid = document.getElementById('wifiSSID').value;
+                const pass = document.getElementById('wifiPass').value;
+                if (!ssid) { UI.log("ERR: SSID 不能为空"); return; }
+
+                // 封装协议: 0x20 + SSID长度 + SSID本身 + 密码长度 + 密码本身
+                const encoder = new TextEncoder();
+                const ssidArr = encoder.encode(ssid);
+                const passArr = encoder.encode(pass);
+                const payload = new Uint8Array([0x20, ssidArr.length, ...ssidArr, passArr.length, ...passArr]);
+
+                await BLEManager.sendCmd(Array.from(payload));
+                UI.log(`[NET] WiFi 配置已注入单片机 NVS -> [${ssid}]`);
+                wifiModal.style.display = 'none';
+            };
+        }
+
         document.getElementById('btnConnect').onclick = async () => {
             try {
                 UI.log("NEGOTIATING HANDSHAKE...");
@@ -119,6 +147,8 @@ class PixelApp {
                 BLEManager.sendCmd([0x04, (ts >> 24) & 0xFF, (ts >> 16) & 0xFF, (ts >> 8) & 0xFF, ts & 0xFF]);
 
                 setTimeout(() => BLEManager.sendCmd([0x10]), 500);
+                // 连接成功后请求 WiFi 配置
+                setTimeout(() => BLEManager.sendCmd([0x17]), 600);
 
             } catch (e) { UI.log(`ERR_CONNECT: ${e.message}`); }
         };
@@ -238,6 +268,14 @@ class PixelApp {
             const macLen = v[2];
             const macStr = macLen > 0 ? new TextDecoder().decode(v.slice(3, 3 + macLen)) : "";
             UI.updateNvsList(type, macStr);
+        }
+        // 【新增】接收设备端 WiFi SSID 回显
+        else if (cmd === 0x17) {
+            const ssidLen = v[1];
+            const ssid = ssidLen > 0 ? new TextDecoder().decode(v.slice(2, 2 + ssidLen)) : "";
+            const inputSSID = document.getElementById('wifiSSID');
+            if (inputSSID) inputSSID.value = ssid;
+            UI.log(`[SYNC] 设备内置网络档案: ${ssid || '无'}`);
         }
     }
 }

@@ -18,15 +18,39 @@
     <header class="app-header">
         <div style="display: flex; align-items: center; gap: 8px;">
             <h1 id="brandTitle" style="cursor: pointer; user-select: none; -webkit-user-select: none;">Pixel-Box <span
-                    style="color:var(--text-muted); font-size: 12px;">V21_PRO</span></h1>
+                    style="color:var(--text-muted); font-size: 12px;">V24_PRO</span></h1>
             <span id="pwaBadge"
                 style="display:none; background:var(--success); color:#000; font-size:9px; padding:2px 6px; border-radius:4px; font-weight:bold;">PWA</span>
         </div>
-        <div style="display: flex; gap: 10px;">
-            <button id="btnConnect">_INIT_CONNECTION</button>
-            <button id="btnDisconnect" class="btn-danger" style="display:none;">_TERMINATE</button>
+        <div style="display: flex; gap: 10px; align-items: center;">
+            <button id="btnOpenWifi" class="ctrl-btn btn-purple" disabled
+                style="margin: 0; padding: 8px 12px; font-size: 12px;">🌐 网络配网</button>
+            <button id="btnConnect" style="margin: 0;">_INIT_CONNECTION</button>
+            <button id="btnDisconnect" class="btn-danger" style="display:none; margin: 0;">_TERMINATE</button>
         </div>
     </header>
+
+    <div id="wifiModal" class="modal-overlay" style="display:none;">
+        <div class="modal-card">
+            <h2>[ NET_CFG ] 瞬态自动校时配网</h2>
+            <p style="font-size: 10px; color: var(--text-muted); margin-bottom: 5px;">// 配置后，设备开机时将耗时约3秒进行闪电校时，随后彻底关断射频
+            </p>
+            <p style="font-size: 10px; color: var(--danger); margin-bottom: 15px; font-weight: bold;">// ⚠️ ESP32 仅支持纯
+                2.4G 频段</p>
+            <div class="setting-row">
+                <label>SSID:</label>
+                <input type="text" id="wifiSSID" placeholder="WiFi 名称" class="modal-input">
+            </div>
+            <div class="setting-row">
+                <label>PASS:</label>
+                <input type="password" id="wifiPass" placeholder="WiFi 密码" class="modal-input">
+            </div>
+            <div class="btn-group" style="margin-top: 20px; display: flex; gap: 10px;">
+                <button id="btnWifiSave" class="btn-success" style="flex:1; margin:0;">注入配置</button>
+                <button id="btnWifiClose" class="btn-danger" style="flex:1; margin:0;">放弃返回</button>
+            </div>
+        </div>
+    </div>
 
     <div id="pwaInstallBanner"
         style="display:none; background: var(--warn); color: #000; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);">
@@ -75,7 +99,7 @@
                 </label>
             </div>
             <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-top: 10px;">
-                <button id="syncTimeBtn" class="ctrl-btn" disabled>🕒 时钟</button>
+                <button id="syncTimeBtn" class="ctrl-btn" disabled>🕒 手机时间校准</button>
                 <button id="showDataBtn" class="ctrl-btn" disabled>🚴 运动</button>
                 <button id="timerModeBtn" class="ctrl-btn" disabled>⏱️ 秒表</button>
                 <button id="countdownModeBtn" class="ctrl-btn" disabled>⏳ 倒数</button>

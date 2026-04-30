@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <NimBLEDevice.h>
 #include "Config.h"
+#include "TimeSync.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
 #include "SensorHub.h"
@@ -278,6 +279,10 @@ void setup()
 {
   Serial.begin(115200);
   AppState.begin();
+
+  // 【核心执行】：在蓝牙激活前，用开机的两秒钟闪电联网校时，随后抹除 WiFi 硬件状态！
+  TimeSync_Init();
+
   NimBLEDevice::init(BLE_DEVICE_NAME);
   Display_Init();
   WebGateway_Init();

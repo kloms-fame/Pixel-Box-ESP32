@@ -199,7 +199,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x10)
         {
-            // 【修改】握手同步时，原本使用 ScanResult 发送，现在统一用 0x16 专用包
             Serial.println("[🤝 SYNC] Web请求快照，下发系统状态及设备记忆...");
             WebGateway_BroadcastBasicState();
             delay(50);
@@ -208,23 +207,40 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                 WebGateway_BroadcastAlarmState(i);
                 delay(50);
             }
-
-            // 下发 NVS 存储的设备
             WebGateway_BroadcastSavedDevices();
+
+            // 【新增】：同步时，顺便把存在单片机里的 WiFi 名字推流回 Web 面板
+            delay(50);
+            std::vector<uint8_t> pW = {0x17, (uint8_t)AppState.wifiSSID.length()};
+            for (char c : AppState.wifiSSID)
+                pW.push_back(c);
+            if (pTxCharacteristic)
+            {
+                pTxCharacteristic->setValue(pW.data(), pW.size());
+                pTxCharacteristic->notify();
+            }
         }
-        else if (cmd == 0x13 && rx.length() >= 2)
+        else if (cmd == 0x20 && rx.length() >= 2)
         {
-            AppState.saveAutoReconnect(rx[1] == 1);
-        }
-        else if (cmd == 0x14 && rx.length() > 2)
-        {
-            AppState.saveSensorMac(rx[1], rx.substr(2));
-            WebGateway_BroadcastSavedDevices(); // 存完立刻刷新 Web
-        }
-        else if (cmd == 0x15 && rx.length() >= 2)
-        { // 【新增】0x15: 删除 NVS 记忆包
-            AppState.clearSensorMac(rx[1]);
-            WebGateway_BroadcastSavedDevices(); // 删完立刻刷新 Web
+            // 【新增】：极其严谨的防内存越界解析，接收配网数据
+            size_t pos = 1;
+            uint8_t ssidLen = rx[pos++];
+            if (rx.length() >= pos + ssidLen)
+            {
+                std::string ssid = rx.substr(pos, ssidLen);
+                pos += ssidLen;
+                std::string pass = "";
+                if (rx.length() > pos)
+                {
+                    uint8_t passLen = rx[pos++];
+                    if (rx.length() >= pos + passLen)
+                    {
+                        pass = rx.substr(pos, passLen);
+                    }
+                }
+                AppState.saveWiFi(ssid, pass);
+                Serial.println("[🌐 WEB] 收到并保存新 WiFi 配置");
+            }
         }
         else if (cmd == 0xFF)
         {
