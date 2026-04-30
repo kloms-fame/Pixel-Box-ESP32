@@ -1,6 +1,5 @@
 class PixelApp {
     constructor() {
-        this.wakeLock = null; // 【新增】：常亮锁对象
         this.initPWA();
         this.initDOM();
         this.bindEvents();
@@ -70,7 +69,6 @@ class PixelApp {
     }
 
     bindEvents() {
-        // ====== 隐藏彩蛋：恢复出厂设置 ======
         const brandTitle = document.getElementById('brandTitle');
         if (brandTitle) {
             let clickCount = 0;
@@ -84,19 +82,17 @@ class PixelApp {
                     clickCount = 0;
                     if (confirm("🧨 危险操作警告：\n\n这将会彻底擦除设备内所有的 NVS 存储记忆（包括所有闹钟、系统亮度、自动重连以及已绑定的骑行设备），并将设备重启！\n\n您确定要将设备恢复出厂设置吗？")) {
                         BLEManager.sendCmd([0xFF]);
-                        UI.log("[SYS] 已下发恢复出厂设置指令，设备正在深度清理...");
+                        UI.log("[SYS] 已下发恢复出厂设置指令，正在清理设备...");
 
-                        // 【核心修复】：主动释放网页端的蓝牙占用
-                        setTimeout(() => { BLEManager.disconnect(); }, 300);
+                        setTimeout(() => { BLEManager.disconnect(); }, 500);
 
-                        // 【核心修复】：启动真正的倒计时并在结束时硬刷新整个页面
-                        let countdown = 4;
+                        let countdown = 3;
                         const timer = setInterval(() => {
                             UI.log(`[SYS] 设备重启中，网页将在 ${countdown} 秒后自动刷新...`);
                             countdown--;
                             if (countdown < 0) {
                                 clearInterval(timer);
-                                window.location.reload(true); // 强行刷新网页，彻底清空前端状态
+                                window.location.reload(true);
                             }
                         }, 1000);
                     }
@@ -115,16 +111,6 @@ class PixelApp {
                 const btnDisc = document.getElementById('btnDisconnect');
                 btnDisc.style.display = 'block';
                 btnDisc.disabled = false;
-
-                // 【核心微雕】：请求屏幕常亮锁，只要保持连接，手机就不会息屏！
-                try {
-                    if ('wakeLock' in navigator) {
-                        this.wakeLock = await navigator.wakeLock.request('screen');
-                        UI.log("[SYS] 已激活屏幕常亮模式，专注您的运动数据");
-                    }
-                } catch (err) {
-                    console.log(`Wake Lock Error: ${err.name}, ${err.message}`);
-                }
 
                 UI.log(`LINK_ESTABLISHED: ${name}，下发系统时间并请求配置...`);
 
@@ -207,12 +193,6 @@ class PixelApp {
         document.getElementById('btnConnect').style.display = 'block';
         document.getElementById('btnDisconnect').style.display = 'none';
         UI.log("LINK_TERMINATED: 设备已离线");
-
-        // 【核心微雕】：设备断开时，释放屏幕常亮锁，让手机恢复正常息屏
-        if (this.wakeLock !== null) {
-            this.wakeLock.release().then(() => { this.wakeLock = null; });
-            UI.log("[SYS] 已释放屏幕常亮锁");
-        }
     }
 
     handleRx(e) {

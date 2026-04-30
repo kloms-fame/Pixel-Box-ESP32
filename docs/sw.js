@@ -1,4 +1,4 @@
-const CACHE_NAME = 'pixel-box-v21';
+const CACHE_NAME = 'pixel-box-v22';
 
 const ASSETS = [
     './',

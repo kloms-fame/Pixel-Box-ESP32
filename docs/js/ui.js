@@ -17,6 +17,7 @@ const UI = {
 
   clearRadar() {
     this.scannedMacs.clear();
+    // 统一下发包含 SCANNING 关键字的 HTML，方便后续匹配删除
     if (this.radarEl) this.radarEl.innerHTML = '<div style="color:var(--accent); text-align:center; padding:10px;">// SCANNING FREQUENCIES...</div>';
   },
 
@@ -25,7 +26,10 @@ const UI = {
     if (this.scannedMacs.has(macStr)) return;
     this.scannedMacs.add(macStr);
 
-    if (this.radarEl.innerText.includes('SCANNING') || this.radarEl.innerText.includes('AWAITING')) this.radarEl.innerHTML = '';
+    // 【完美修正】：只要列表里有占位符文本，就清空列表
+    if (this.radarEl.innerText.includes('SCANNING') || this.radarEl.innerText.includes('AWAITING')) {
+      this.radarEl.innerHTML = '';
+    }
 
     let typeStr = type === 1 ? 'HRM - 心率监测' : type === 2 ? 'CSC - 速度踏频' : 'UNK - 未知设备';
     let typeColor = type !== 0 ? 'var(--accent)' : '#52525b';
