@@ -6,10 +6,52 @@ class PixelApp {
     }
 
     initPWA() {
+        // 1. 注册 Service Worker 实现断网离线访问
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').then(() => {
                 document.getElementById('pwaBadge').style.display = 'inline-block';
+                console.log("[PWA] 离线引擎注册成功");
             });
+        }
+
+        // 2. 侦测是否运行在“桌面 App 模式” (如果已经是 App，就不需要再提示安装了)
+        const isInStandaloneMode = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone || document.referrer.includes('android-app://');
+
+        if (isInStandaloneMode()) {
+            UI.log("[SYS] 当前运行在原生沉浸模式");
+            return;
+        }
+
+        // 3. 针对 Android / Windows Chrome 的自动安装拦截
+        let deferredPrompt;
+        window.addEventListener('beforeinstallprompt', (e) => {
+            // 阻止浏览器默认的丑陋横幅
+            e.preventDefault();
+            deferredPrompt = e;
+
+            // 显示我们极简风的安装横幅
+            const installBanner = document.getElementById('pwaInstallBanner');
+            installBanner.style.display = 'flex';
+
+            document.getElementById('btnInstallPWA').onclick = async () => {
+                installBanner.style.display = 'none';
+                deferredPrompt.prompt();
+                const { outcome } = await deferredPrompt.userChoice;
+                if (outcome === 'accepted') {
+                    UI.log("[PWA] 应用安装成功，请去桌面查看");
+                }
+                deferredPrompt = null;
+            };
+        });
+
+        // 4. 针对 iOS Safari 的专属拦截提醒 (苹果系统封闭，必须人工干预)
+        const isIos = () => {
+            const userAgent = window.navigator.userAgent.toLowerCase();
+            return /iphone|ipad|ipod/.test(userAgent);
+        };
+
+        if (isIos() && !isInStandaloneMode()) {
+            document.getElementById('iosInstallHint').style.display = 'block';
         }
     }
 

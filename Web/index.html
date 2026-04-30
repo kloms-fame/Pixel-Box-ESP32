@@ -27,7 +27,18 @@
             <button id="btnDisconnect" class="btn-danger" style="display:none;">_TERMINATE</button>
         </div>
     </header>
+    <div id="pwaInstallBanner"
+        style="display:none; background: var(--warn); color: #000; padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; align-items: center; justify-content: space-between; box-shadow: 0 4px 15px rgba(245, 158, 11, 0.3);">
+        <span style="font-weight: bold; font-size: 13px;">📲 将 Pixel-Box 安装到手机桌面，支持离线免网控制！</span>
+        <button id="btnInstallPWA"
+            style="background: #000; color: var(--warn); border: none; padding: 6px 16px; margin: 0;">立即安装</button>
+    </div>
 
+    <div id="iosInstallHint"
+        style="display:none; background: var(--panel); border: 1px solid var(--accent); color: var(--text-main); padding: 12px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 12px; box-shadow: 0 4px 15px var(--accent-glow);">
+        <span style="font-weight: bold; color: var(--accent);">🍏 iOS 用户专属离线指南:</span><br>
+        请点击浏览器底部的 <b>[分享]</b> 图标，然后选择 <b>[添加到主屏幕]</b>。下次直接从桌面秒开！
+    </div>
     <main class="grid-layout">
 
         <section class="card">
