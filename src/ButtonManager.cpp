@@ -93,7 +93,7 @@ void onPlusClick()
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
-        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 2) % 3;
+        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
         Display_Clear();
         Display_Show();
     }
@@ -131,7 +131,7 @@ void onMinusClick()
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
-        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
+        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 2) % 3;
         Display_Clear();
         Display_Show();
     }
