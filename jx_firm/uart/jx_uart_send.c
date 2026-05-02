@@ -183,3 +183,69 @@ void _uart_RX_0x09(unsigned char CS_KM_INT, unsigned char CS_KM_DEC, unsigned ch
   _uart_send_impl(buff, 9);
 }
 
+// action: AlarmSetSuccess
+void _uart_AlarmSetSuccess(unsigned char Hours, unsigned char Minutes) {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_AlarmSetSuccess;
+  param.d_uchar = Hours;
+  buff[3] = param.d_uchar;
+  param.d_uchar = Minutes;
+  buff[4] = param.d_uchar;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 5] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 7);
+}
+
+// action: AlarmSetError
+void _uart_AlarmSetError() {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_AlarmSetError;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 3] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 5);
+}
+
+// action: CountDownSuc
+void _uart_CountDownSuc(unsigned char CountDownMin) {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_CountDownSuc;
+  param.d_uchar = CountDownMin;
+  buff[3] = param.d_uchar;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 4] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 6);
+}
+
+// action: CountDownEro
+void _uart_CountDownEro() {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_CountDownEro;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 3] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 5);
+}
+

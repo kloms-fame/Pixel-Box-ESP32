@@ -20,6 +20,10 @@ extern "C" {
 #define U_MSG_RX_0x07      7
 #define U_MSG_RX_0x08      8
 #define U_MSG_RX_0x09      9
+#define U_MSG_AlarmSetSuccess      162
+#define U_MSG_AlarmSetError      163
+#define U_MSG_CountDownSuc      194
+#define U_MSG_CountDownEro      195
 
 // 串口消息参数类型
 typedef union {
@@ -97,6 +101,18 @@ void _uart_RX_0x08();
 
 // action: RX_0x09
 void _uart_RX_0x09(unsigned char CS_KM_INT, unsigned char CS_KM_DEC, unsigned char CS_HOUR, unsigned char CS_MIN);
+
+// action: AlarmSetSuccess
+void _uart_AlarmSetSuccess(unsigned char Hours, unsigned char Minutes);
+
+// action: AlarmSetError
+void _uart_AlarmSetError();
+
+// action: CountDownSuc
+void _uart_CountDownSuc(unsigned char CountDownMin);
+
+// action: CountDownEro
+void _uart_CountDownEro();
 
 #ifdef __cplusplus
 }
