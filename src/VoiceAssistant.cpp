@@ -70,15 +70,17 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
     switch (cmd)
     {
     // --- 【新增】多步输入唤醒指令 ---
+    // --- 提取 param 参数，支持指定跳转 ---
+    // --- 提取 param 参数，支持指定跳转 ---
     case 0xA1:
-        VoiceInputMachine::startAlarmInput();
+        VoiceInputMachine::startAlarmSelection();
         break;
     case 0xC1:
         VoiceInputMachine::startCountdownInput();
         break;
     case 0x98:
-        VoiceInputMachine::abortInput();
-        break; // “退出输入”的逃生指令
+        VoiceInputMachine::abortInput(false);
+        break;
 
     // ... (下方是你原本 V26 的所有 case 指令，完全保持原样，无需修改) ...
     case 0x0C:
@@ -368,6 +370,7 @@ void VoiceAssistant_Loop()
         else
             rxState = 0;
     }
+    VoiceInputMachine::loop();
 
     static unsigned long lastCalc = 0;
     if (isRiding && millis() - lastCalc >= 1000)

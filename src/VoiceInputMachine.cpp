@@ -7,61 +7,105 @@
 VoiceInputState VoiceInputMachine::currentState = V_IDLE;
 uint8_t VoiceInputMachine::buffer[4] = {0};
 uint8_t VoiceInputMachine::inputIndex = 0;
+uint8_t VoiceInputMachine::targetAlarmIndex = 0;
+unsigned long VoiceInputMachine::lastInputSysTime = 0;
 
 void VoiceInputMachine::init()
 {
     currentState = V_IDLE;
-    inputIndex = 0;
+    inputIndex = 0;       // 建议加上
+    targetAlarmIndex = 0; // 建议加上
 }
 
-// 开启闹钟输入模式
-void VoiceInputMachine::startAlarmInput()
+void VoiceInputMachine::loop()
 {
-    currentState = V_WAIT_ALARM;
-    inputIndex = 0;
-    Serial.println("[🎙️ 状态机] 进入等待输入闹钟模式 (需4位数字)");
+    if (currentState != V_IDLE && (millis() - lastInputSysTime > 8000))
+    {
+        abortInput(true);
+    }
 }
 
-// 开启倒数输入模式
+// 入口：用户说“定闹钟”
+void VoiceInputMachine::startAlarmSelection()
+{
+    currentState = V_WAIT_INDEX;
+    lastInputSysTime = millis();
+    Serial.println("[🎙️ 状态机] 进入闹钟选择模式，请说出组号 (1-3)");
+    // 这里不需要切屏，等选好了组再切
+}
+
 void VoiceInputMachine::startCountdownInput()
 {
+    AppState.currentMode = MODE_COUNTDOWN;
+    Display_Clear();
+    Display_Show();
     currentState = V_WAIT_CDOWN;
     inputIndex = 0;
-    Serial.println("[🎙️ 状态机] 进入等待输入倒数模式 (需2位数字)");
+    lastInputSysTime = millis();
 }
 
-// 喂入语音数字
 void VoiceInputMachine::feedDigit(uint8_t digit)
 {
     if (currentState == V_IDLE)
-        return; // 空闲时忽略数字指令
-
-    // 每收到一个数字，滴一声作为确认反馈
+        return;
+    lastInputSysTime = millis();
     VoiceAssistant_Beep(50);
 
-    buffer[inputIndex++] = digit;
-    Serial.printf("[🎙️ 状态机] 收到数字: %d, 当前进度: %d\n", digit, inputIndex);
+    // 情况 A：正在选闹钟组号
+    if (currentState == V_WAIT_INDEX)
+    {
+        if (digit >= 1 && digit <= 3)
+        {
+            targetAlarmIndex = digit - 1; // 转换为 0, 1, 2
+            AppState.alarmDisplayIndex = targetAlarmIndex;
+            AppState.currentMode = MODE_ALARM;
+            Display_Clear();
+            Display_Show();
 
-    // 闹钟需要 4 位数字
+            // 选好了，进入录入时间状态
+            currentState = V_WAIT_ALARM;
+            inputIndex = 0;
+            // 反馈给 SU-03T 播报：“好的，开始设定第 X 组闹钟，请说四位数字”
+            VoiceAssistant_Send1(0xA5, digit);
+            Serial.printf("[🎙️ 状态机] 已选中闹钟组 %d，等待录入时间\n", digit);
+        }
+        else
+        {
+            // 输入了无效组号 (比如数字5)，提示错误
+            VoiceAssistant_Send0(0xA6);
+        }
+        return;
+    }
+
+    // 情况 B：正在录入数字
+    buffer[inputIndex++] = digit;
     if (currentState == V_WAIT_ALARM && inputIndex == 4)
     {
         processAlarm();
     }
-    // 倒计时需要 2 位数字
     else if (currentState == V_WAIT_CDOWN && inputIndex == 2)
     {
         processCountdown();
     }
 }
 
-// 强行中止
-void VoiceInputMachine::abortInput()
+// 中止输入
+void VoiceInputMachine::abortInput(bool isTimeout)
 {
     if (currentState != V_IDLE)
     {
         currentState = V_IDLE;
         inputIndex = 0;
-        Serial.println("[🎙️ 状态机] 输入已中止并复位");
+        if (isTimeout)
+        {
+            // 【新增】如果是超时，发送 0x97 给 SU-03T，让它语音播报并重置变量锁
+            VoiceAssistant_Send0(0x97);
+            Serial.println("[🎙️ 状态机] ⏳ 输入超时 (8秒)，已自动中止");
+        }
+        else
+        {
+            Serial.println("[🎙️ 状态机] 🛑 输入已手动中止");
+        }
     }
 }
 
@@ -73,7 +117,6 @@ void VoiceInputMachine::processAlarm()
 
     if (hh < 24 && mm < 60)
     {
-        // 数据合法，保存至当前选中的闹钟组
         uint8_t idx = AppState.alarmDisplayIndex;
         AppState.saveAlarm(idx, true, hh, mm);
         WebGateway_BroadcastAlarmState(idx);
@@ -82,17 +125,15 @@ void VoiceInputMachine::processAlarm()
         Display_Clear();
         Display_Show();
 
-        // 成功反馈: AA 55 A2 [HH] [MM] 55 AA
         VoiceAssistant_Send2(0xA2, hh, mm);
-        Serial.printf("[⏰ 闹钟] 语音设定成功: %02d:%02d\n", hh, mm);
+        Serial.printf("[⏰ 闹钟] 设定成功: %02d:%02d\n", hh, mm);
     }
     else
     {
-        // 数据非法打回: AA 55 A3 55 AA
         VoiceAssistant_Send0(0xA3);
-        Serial.println("[⏰ 闹钟] 设定失败: 时间格式错误");
+        Serial.println("[⏰ 闹钟] 设定失败: 格式错误");
     }
-    currentState = V_IDLE; // 处理完归位
+    currentState = V_IDLE;
 }
 
 // 处理倒计时逻辑
@@ -102,7 +143,6 @@ void VoiceInputMachine::processCountdown()
 
     if (mm > 0 && mm <= 99)
     {
-        // 数据合法，启动倒计时
         AppState.countdownTotalSeconds = mm * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         AppState.isCountdownRunning = false;
@@ -112,15 +152,13 @@ void VoiceInputMachine::processCountdown()
         Display_Show();
         WebGateway_BroadcastCdownConfig();
 
-        // 成功反馈: AA 55 C2 [MM] 55 AA
         VoiceAssistant_Send1(0xC2, mm);
-        Serial.printf("[⏳ 倒数] 语音设定成功: %d 分钟\n", mm);
+        Serial.printf("[⏳ 倒数] 设定成功: %d 分钟\n", mm);
     }
     else
     {
-        // 数据非法打回: AA 55 C3 55 AA
         VoiceAssistant_Send0(0xC3);
         Serial.println("[⏳ 倒数] 设定失败: 时长越界");
     }
-    currentState = V_IDLE; // 处理完归位
+    currentState = V_IDLE;
 }
