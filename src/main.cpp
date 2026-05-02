@@ -7,6 +7,7 @@
 #include "SensorHub.h"
 #include "WebGateway.h"
 #include "ButtonManager.h"
+#include "VoiceAssistant.h"
 
 void renderClock()
 {
@@ -291,6 +292,7 @@ void setup()
   NimBLEDevice::init(BLE_DEVICE_NAME);
   WebGateway_Init();
   ButtonManager_Init();
+  VoiceAssistant_Init(); // 【新增】：仅需这一行唤醒语音模块
   Serial.println("🚀 Pixel-Box OS Core Ready.");
   AppState.pendingCmd = 8;
 }
@@ -298,6 +300,9 @@ void setup()
 void loop()
 {
   ButtonManager_Loop();
+
+  // 【终极修复】：必须加上这一行！让单片机每一毫秒都在静默监听语音模块的串口数据！
+  VoiceAssistant_Loop();
 
   // ================= 异步任务队列 =================
   if (AppState.pendingCmd != 0)
