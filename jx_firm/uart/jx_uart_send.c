@@ -25,7 +25,7 @@ void _uart_send_impl(unsigned char* buff, int len) {
 }
 
 // action: RX_0x01
-void _uart_RX_0x01(unsigned char CS_1) {
+void _uart_RX_0x01(unsigned char CountdownSet) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -33,7 +33,7 @@ void _uart_RX_0x01(unsigned char CS_1) {
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x01;
-  param.d_uchar = CS_1;
+  param.d_uchar = CountdownSet;
   buff[3] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
       buff[i + 4] = g_uart_send_foot[i];
@@ -42,7 +42,7 @@ void _uart_RX_0x01(unsigned char CS_1) {
 }
 
 // action: RX_0x02
-void _uart_RX_0x02(unsigned char CS_2, unsigned char CS_3) {
+void _uart_RX_0x02(unsigned char TimeHor, unsigned char TimeMin) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -50,9 +50,9 @@ void _uart_RX_0x02(unsigned char CS_2, unsigned char CS_3) {
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x02;
-  param.d_uchar = CS_2;
+  param.d_uchar = TimeHor;
   buff[3] = param.d_uchar;
-  param.d_uchar = CS_3;
+  param.d_uchar = TimeMin;
   buff[4] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
       buff[i + 5] = g_uart_send_foot[i];
@@ -61,7 +61,7 @@ void _uart_RX_0x02(unsigned char CS_2, unsigned char CS_3) {
 }
 
 // action: RX_0x03
-void _uart_RX_0x03(unsigned char CS_4, unsigned char CS_5) {
+void _uart_RX_0x03(unsigned char HeartRate, unsigned char Cadence) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -69,9 +69,9 @@ void _uart_RX_0x03(unsigned char CS_4, unsigned char CS_5) {
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x03;
-  param.d_uchar = CS_4;
+  param.d_uchar = HeartRate;
   buff[3] = param.d_uchar;
-  param.d_uchar = CS_5;
+  param.d_uchar = Cadence;
   buff[4] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
       buff[i + 5] = g_uart_send_foot[i];
@@ -80,7 +80,7 @@ void _uart_RX_0x03(unsigned char CS_4, unsigned char CS_5) {
 }
 
 // action: RX_0x04
-void _uart_RX_0x04(unsigned char CS_6) {
+void _uart_RX_0x04(unsigned char CountdownTenSec) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -88,7 +88,7 @@ void _uart_RX_0x04(unsigned char CS_6) {
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x04;
-  param.d_uchar = CS_6;
+  param.d_uchar = CountdownTenSec;
   buff[3] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
       buff[i + 4] = g_uart_send_foot[i];
@@ -97,7 +97,7 @@ void _uart_RX_0x04(unsigned char CS_6) {
 }
 
 // action: RX_0x05
-void _uart_RX_0x05() {
+void _uart_RX_0x05(unsigned char Cadence) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -105,14 +105,16 @@ void _uart_RX_0x05() {
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x05;
+  param.d_uchar = Cadence;
+  buff[3] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
-      buff[i + 3] = g_uart_send_foot[i];
+      buff[i + 4] = g_uart_send_foot[i];
   }
-  _uart_send_impl(buff, 5);
+  _uart_send_impl(buff, 6);
 }
 
 // action: RX_0x06
-void _uart_RX_0x06() {
+void _uart_RX_0x06(unsigned char HeartRate) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -120,10 +122,12 @@ void _uart_RX_0x06() {
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x06;
+  param.d_uchar = HeartRate;
+  buff[3] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
-      buff[i + 3] = g_uart_send_foot[i];
+      buff[i + 4] = g_uart_send_foot[i];
   }
-  _uart_send_impl(buff, 5);
+  _uart_send_impl(buff, 6);
 }
 
 // action: RX_0x07
@@ -157,7 +161,7 @@ void _uart_RX_0x08() {
 }
 
 // action: RX_0x09
-void _uart_RX_0x09(unsigned char CS_7, unsigned char CS_8, unsigned char CS_9, unsigned char CS_10) {
+void _uart_RX_0x09(unsigned char CS_KM_INT, unsigned char CS_KM_DEC, unsigned char CS_HOUR, unsigned char CS_MIN) {
   uart_param_t param;
   int i = 0;
   unsigned char buff[UART_SEND_MAX] = {0};
@@ -165,13 +169,13 @@ void _uart_RX_0x09(unsigned char CS_7, unsigned char CS_8, unsigned char CS_9, u
       buff[i + 0] = g_uart_send_head[i];
   }
   buff[2] = U_MSG_RX_0x09;
-  param.d_uchar = CS_7;
+  param.d_uchar = CS_KM_INT;
   buff[3] = param.d_uchar;
-  param.d_uchar = CS_8;
+  param.d_uchar = CS_KM_DEC;
   buff[4] = param.d_uchar;
-  param.d_uchar = CS_9;
+  param.d_uchar = CS_HOUR;
   buff[5] = param.d_uchar;
-  param.d_uchar = CS_10;
+  param.d_uchar = CS_MIN;
   buff[6] = param.d_uchar;
   for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
       buff[i + 7] = g_uart_send_foot[i];

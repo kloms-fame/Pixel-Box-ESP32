@@ -4,79 +4,69 @@
 #include "WebGateway.h"
 #include "TimeSync.h"
 #include "DisplayCore.h"
+#include <HardwareSerial.h>
 
-// 硬件引脚配置 (继承 V25 的极度稳定方案)
-#define PIN_VOICE_RX 2 // 对应 SU-03T 的 TX
-#define PIN_VOICE_TX 3 // 对应 SU-03T 的 RX
-#define PIN_BUZZER 1   // 蜂鸣器引脚
+#define PIN_VOICE_RX 2
+#define PIN_VOICE_TX 3
+#define PIN_BUZZER 0
 
-// === 后台 Daemon 状态变量 ===
+HardwareSerial VoiceSerial(1);
+
+// === 状态机与引擎变量 ===
 static bool metronomeEnabled = false;
 static uint16_t metronomeBpm = 0;
 static uint8_t hrZone = 0;
-static unsigned long lastAutoReportTime = 0;
-static uint32_t lastReportedSec = 0;
-
-// === 虚拟骑行引擎状态变量 ===
+static uint32_t lastReportedSec = 99;
 static bool isRiding = false;
 static unsigned long rideStartSysTime = 0;
-static float rideDistanceKm = 0.0; // 虚拟里程累加器
+static float rideDistanceKm = 0.0;
 
 // ==========================================
-// 核心通信组件 1：双变量发送器 (13字节协议)
+// 智能公元专属动态长度发送器
 // ==========================================
-void VoiceAssistant_SendVoice(uint8_t msgId, uint32_t val1, uint32_t val2)
+void VoiceAssistant_Send0(uint8_t msgId)
 {
-    uint8_t buf[13] = {0xAA, 0x55, msgId, 0, 0, 0, 0, 0, 0, 0, 0, 0x55, 0xAA};
-    buf[3] = (val1 >> 24) & 0xFF;
-    buf[4] = (val1 >> 16) & 0xFF;
-    buf[5] = (val1 >> 8) & 0xFF;
-    buf[6] = val1 & 0xFF;
-    buf[7] = (val2 >> 24) & 0xFF;
-    buf[8] = (val2 >> 16) & 0xFF;
-    buf[9] = (val2 >> 8) & 0xFF;
-    buf[10] = val2 & 0xFF;
-    Serial1.write(buf, 13);
+    uint8_t buf[5] = {0xAA, 0x55, msgId, 0x55, 0xAA};
+    VoiceSerial.write(buf, 5);
+}
+void VoiceAssistant_Send1(uint8_t msgId, uint8_t v1)
+{
+    uint8_t buf[6] = {0xAA, 0x55, msgId, v1, 0x55, 0xAA};
+    VoiceSerial.write(buf, 6);
+}
+void VoiceAssistant_Send2(uint8_t msgId, uint8_t v1, uint8_t v2)
+{
+    uint8_t buf[7] = {0xAA, 0x55, msgId, v1, v2, 0x55, 0xAA};
+    VoiceSerial.write(buf, 7);
+}
+void VoiceAssistant_Send4(uint8_t msgId, uint8_t v1, uint8_t v2, uint8_t v3, uint8_t v4)
+{
+    uint8_t buf[9] = {0xAA, 0x55, msgId, v1, v2, v3, v4, 0x55, 0xAA};
+    VoiceSerial.write(buf, 9);
+    Serial.printf("[🎙️ 总结] 骑行总结已下发: %d.%d KM, %d H %d M\n", v1, v2, v3, v4);
 }
 
 // ==========================================
-// 核心通信组件 2：四变量发送器 (专属骑行总结)
-// 完美对应你的 RX_0x09: 本次骑行 CS_7 点 CS_8 公里, 用时 CS_9 小时 CS_10 分钟
-// ==========================================
-void VoiceAssistant_SendRideSummary(uint8_t km_int, uint8_t km_dec, uint8_t hours, uint8_t mins)
-{
-    uint8_t buf[13] = {0xAA, 0x55, 0x09, 0, 0, 0, 0, 0, 0, 0, 0, 0x55, 0xAA};
-    // 巧妙利用 13 字节协议的中间 4 个字节，装载 4 个小变量
-    buf[3] = km_int;
-    buf[4] = km_dec;
-    buf[5] = hours;
-    buf[6] = mins;
-    Serial1.write(buf, 13);
-    Serial.printf("[🎙️ 总结] 骑行总结已下发: %d.%d KM, %d H %d M\n", km_int, km_dec, hours, mins);
-}
-
-// ==========================================
-// 极客级大脑：51 项全功能路由解析器
+// 极客大脑：指令执行路由
 // ==========================================
 void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
 {
-    Serial.printf("\n[🎙️ VOICE] 👉 执行硬核指令: CMD[0x%02X] PARAM[%d]\n", cmd, param);
+    Serial.printf("\n[🎙️ VOICE] 👉 指令匹配: CMD[0x%02X] PARAM[%d]\n", cmd, param);
 
     switch (cmd)
     {
-    // ------------------------------------
-    // 1. 倒计时引擎 (0x0C, 0x0D)
-    // ------------------------------------
-    case 0x0C: // 设倒计时
+    // --- 1. 计时引擎 ---
+    case 0x0C:
         AppState.countdownTotalSeconds = param * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         AppState.isCountdownRunning = false;
         AppState.currentMode = MODE_COUNTDOWN;
-        WebGateway_BroadcastCdownConfig();
-        VoiceAssistant_SendVoice(0x01, param, 0); // RX_0x01: 收到，已设XX分
+        Display_Clear();
+        Display_Show();
+        VoiceAssistant_Send1(0x01, param);
         break;
-    case 0x0D: // 倒计时控制
-        if (param == 1 && AppState.countdownRemaining > 0)
+    case 0x0D:
+        if (param == 1)
         {
             AppState.countdownStartSysTime = millis();
             AppState.isCountdownRunning = true;
@@ -84,22 +74,18 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         }
         else if (param == 0)
         {
-            uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
-            AppState.countdownRemaining = (elapsed < AppState.countdownRemaining) ? (AppState.countdownRemaining - elapsed) : 0;
             AppState.isCountdownRunning = false;
         }
-        else if (param == 2)
+        else
         {
             AppState.countdownRemaining = AppState.countdownTotalSeconds;
             AppState.isCountdownRunning = false;
             AppState.isCountdownFinished = false;
         }
         AppState.currentMode = MODE_COUNTDOWN;
+        Display_Clear();
+        Display_Show();
         break;
-
-    // ------------------------------------
-    // 2. 正向秒表 (0x0A)
-    // ------------------------------------
     case 0x0A:
         if (param == 1)
         {
@@ -111,17 +97,17 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
             AppState.timerElapsed += millis() - AppState.timerStartTime;
             AppState.isTimerRunning = false;
         }
-        else if (param == 2)
+        else
         {
             AppState.timerElapsed = 0;
             AppState.isTimerRunning = false;
         }
         AppState.currentMode = MODE_TIMER;
+        Display_Clear();
+        Display_Show();
         break;
 
-    // ------------------------------------
-    // 3. 骑行辅助与环境感知 (0x34-0x3A, 0x41-0x42)
-    // ------------------------------------
+    // --- 2. 骑行播报 ---
     case 0x34:
         metronomeEnabled = true;
         metronomeBpm = param;
@@ -131,61 +117,33 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         break;
     case 0x36:
         hrZone = 1;
-        break; // 燃脂
+        break;
     case 0x37:
         hrZone = 2;
-        break; // 有氧
+        break;
     case 0x38:
         hrZone = 0;
-        break; // 退出区间
+        break;
     case 0x39:
-        VoiceAssistant_SendVoice(0x03, AppState.currentHR, AppState.currentCadence);
-        break; // 报双项
+        VoiceAssistant_Send2(0x03, AppState.currentHR, AppState.currentCadence);
+        break;
     case 0x3A:
     {
-        time_t now;
+        time_t n;
         struct tm ti;
-        time(&now);
-        localtime_r(&now, &ti);
-        VoiceAssistant_SendVoice(0x02, ti.tm_hour, ti.tm_min);
+        time(&n);
+        localtime_r(&n, &ti);
+        VoiceAssistant_Send2(0x02, ti.tm_hour, ti.tm_min);
     }
     break;
     case 0x41:
-        VoiceAssistant_SendVoice(0x05, AppState.currentCadence, 0);
-        break; // 单报踏频
+        VoiceAssistant_Send1(0x05, AppState.currentCadence);
+        break;
     case 0x42:
-        VoiceAssistant_SendVoice(0x06, AppState.currentHR, 0);
-        break; // 单报心率
-
-    // ------------------------------------
-    // 4. 骑行记录引擎 (0x43-0x45)
-    // ------------------------------------
-    case 0x43:
-        isRiding = true;
-        rideStartSysTime = millis();
-        Serial.println("[🚴‍♂️ RECORD] 骑行轨迹开始记录");
-        break;
-    case 0x44:
-        if (isRiding)
-        {
-            isRiding = false;
-            uint32_t totalSec = (millis() - rideStartSysTime) / 1000;
-            uint8_t hours = totalSec / 3600;
-            uint8_t mins = (totalSec % 3600) / 60;
-            uint8_t km_int = (uint8_t)rideDistanceKm;
-            uint8_t km_dec = (uint8_t)((rideDistanceKm - km_int) * 10);
-            VoiceAssistant_SendRideSummary(km_int, km_dec, hours, mins); // 触发终极总结播报
-        }
-        break;
-    case 0x45:
-        rideDistanceKm = 0.0;
-        rideStartSysTime = millis();
-        Serial.println("[🚴‍♂️ RECORD] 骑行记录已清零");
+        VoiceAssistant_Send1(0x06, AppState.currentHR);
         break;
 
-    // ------------------------------------
-    // 5. 蓝牙与底层设备管理 (0x11-0x14)
-    // ------------------------------------
+    // --- 3. 蓝牙管控 ---
     case 0x11:
         AppState.pendingCmd = 11;
         break;
@@ -199,14 +157,135 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         AppState.pendingCmd = 14;
         break;
 
-    // ------------------------------------
-    // 6. 系统界面与打断机制 (0x03-0x05, 0x32, 0x40, 0x99)
-    // ------------------------------------
+    // --- 4. 骑行记录引擎 ---
+    case 0x43:
+        isRiding = true;
+        rideStartSysTime = millis();
+        Serial.println("[🚴‍♂️] 开始记录骑行");
+        break;
+    case 0x45:
+        rideDistanceKm = 0;
+        Serial.println("[🚴‍♂️] 记录清零");
+        break;
+    case 0x44:
+    case 0x57:
+    {
+        uint32_t sec = isRiding ? ((millis() - rideStartSysTime) / 1000) : 0;
+        uint8_t hh = sec / 3600;
+        uint8_t mm = (sec % 3600) / 60;
+        uint8_t k_i = (uint8_t)rideDistanceKm;
+        uint8_t k_d = (uint8_t)((rideDistanceKm - k_i) * 10);
+        VoiceAssistant_Send4(0x09, k_i, k_d, hh, mm);
+        if (cmd == 0x44)
+            isRiding = false;
+    }
+    break;
+
+    // --- 5. 屏幕系统控制 ---
+    case 0x05:
+        if (param == 1)
+        {
+            int b = min(255, AppState.brightness + 50);
+            AppState.saveBrightness(b);
+            Display_SetBrightness(b);
+        }
+        else
+        {
+            int b = max(5, AppState.brightness - 50);
+            AppState.saveBrightness(b);
+            Display_SetBrightness(b);
+        }
+        Display_Show();
+        break;
+    case 0x03:
+        AppState.currentMode = MODE_OFF;
+        Display_Clear();
+        Display_Show();
+        break;
+    case 0x04:
+    case 0x52:
+        AppState.currentMode = MODE_CLOCK;
+        Display_Clear();
+        Display_Show();
+        break;
+    case 0x54:
+        AppState.currentMode = MODE_TIMER;
+        Display_Clear();
+        Display_Show();
+        break;
+    case 0x55:
+        AppState.currentMode = MODE_COUNTDOWN;
+        Display_Clear();
+        Display_Show();
+        break;
+    case 0x56:
+        AppState.currentMode = MODE_ALARM;
+        Display_Clear();
+        Display_Show();
+        break;
+    case 0x58:
+        AppState.currentMode = MODE_SENSOR_CSC;
+        Display_Clear();
+        Display_Show();
+        break;
+    case 0x59:
+        AppState.currentMode = MODE_SENSOR_HRM;
+        Display_Clear();
+        Display_Show();
+        break;
+
+    // --- 6. 【完美重构】闹钟矩阵控制 ---
+    case 0x5A: // 下一组闹钟
+        AppState.currentMode = MODE_ALARM;
+        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
+        Display_Clear();
+        Display_Show();
+        Serial.println("[⏰ ALARM] 已切换至下一组闹钟");
+        break;
+    case 0x5B: // 启用当前闹钟
+        AppState.currentMode = MODE_ALARM;
+        {
+            uint8_t idx = AppState.alarmDisplayIndex;
+            AppState.saveAlarm(idx, true, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
+            WebGateway_BroadcastAlarmState(idx);
+            Display_Clear();
+            Display_Show();
+            Serial.printf("[⏰ ALARM] 启用当前闹钟 (组号: %d)\n", idx);
+        }
+        break;
+    case 0x5C: // 关闭当前闹钟
+        AppState.currentMode = MODE_ALARM;
+        {
+            uint8_t idx = AppState.alarmDisplayIndex;
+            AppState.saveAlarm(idx, false, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
+            WebGateway_BroadcastAlarmState(idx);
+            Display_Clear();
+            Display_Show();
+            Serial.printf("[⏰ ALARM] 关闭当前闹钟 (组号: %d)\n", idx);
+        }
+        break;
+    case 0x5D: // 【新增】删除当前闹钟
+        AppState.currentMode = MODE_ALARM;
+        {
+            uint8_t idx = AppState.alarmDisplayIndex;
+            // 将时间归零，关闭使能，这在 UI 和底层都等同于彻底清除该闹钟
+            AppState.saveAlarm(idx, false, 0, 0);
+            AppState.alarms[idx].isSet = false; // 强行清除驻留标记
+            WebGateway_BroadcastAlarmState(idx);
+            Display_Clear();
+            Display_Show();
+            Serial.printf("[⏰ ALARM] 彻底删除当前闹钟 (组号: %d)\n", idx);
+        }
+        break;
+
+    // --- 7. 系统打断与彩蛋 ---
     case 0x32:
         for (int i = 0; i < 3; i++)
-            AppState.alarms[i].isRinging = false; // 强行斩断所有闹钟响铃
+            AppState.alarms[i].isRinging = false;
         AppState.isCountdownFinished = false;
-        AppState.currentMode = AppState.previousMode;
+        AppState.currentMode = MODE_CLOCK;
+        Display_Clear();
+        Display_Show();
         break;
     case 0x33:
         for (int i = 0; i < 3; i++)
@@ -220,42 +299,11 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         break;
     case 0x40:
         TimeSync_Init();
-        break; // 瞬态校时
-    case 0x03:
-        AppState.currentMode = MODE_OFF;
-        break; // 息屏
-    case 0x04:
-        AppState.currentMode = MODE_CLOCK;
-        break; // 亮屏
-    case 0x05: // 语音控光
-        if (param == 1)
-        {
-            int b = AppState.brightness + 30;
-            if (b > 255)
-                b = 255;
-            AppState.saveBrightness(b);
-            Display_SetBrightness(b);
-            Display_Show();
-        }
-        else
-        {
-            int b = AppState.brightness - 30;
-            if (b < 5)
-                b = 5;
-            AppState.saveBrightness(b);
-            Display_SetBrightness(b);
-            Display_Show();
-        }
         break;
-    case 0x99:
-        AppState.pendingCmd = 99;
-        break; // 召唤出厂重置/重启
 
-    // ------------------------------------
-    // 7. 彩蛋交互 (0x51) - 对应表格里的“好累啊”
-    // ------------------------------------
-    case 0x51:
-        // 给你两声清脆的蜂鸣器滴答，假装在鼓励你
+        // （已删除 0x99 重启设备的路由接收代码）
+
+    case 0x51: // 好累啊
         digitalWrite(PIN_BUZZER, HIGH);
         delay(50);
         digitalWrite(PIN_BUZZER, LOW);
@@ -263,35 +311,24 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         digitalWrite(PIN_BUZZER, HIGH);
         delay(100);
         digitalWrite(PIN_BUZZER, LOW);
-        Serial.println("[💡 EASTER EGG] 触发疲劳安抚彩蛋");
         break;
     }
 }
 
-// ==========================================
-// 初始化挂载
-// ==========================================
 void VoiceAssistant_Init()
 {
-    Serial1.begin(115200, SERIAL_8N1, PIN_VOICE_RX, PIN_VOICE_TX);
+    VoiceSerial.begin(115200, SERIAL_8N1, PIN_VOICE_RX, PIN_VOICE_TX);
     pinMode(PIN_BUZZER, OUTPUT);
     digitalWrite(PIN_BUZZER, LOW);
-    Serial.println("🎙️ 离线语音 V26 终极形态已挂载 (Baud=115200, 51项指令全开)");
+    Serial.println("🎙️ 语音副脑 V28 已挂载 (重构闹钟矩阵).");
 }
 
-// ==========================================
-// 无阻塞守护进程 (Daemon)
-// ==========================================
 void VoiceAssistant_Loop()
 {
-    static uint8_t rxState = 0;
-    static uint8_t rxCmd = 0;
-    static uint8_t rxParam = 0;
-
-    // 1. 滑动窗口抓包器 (强行从噪音中提取有效帧)
-    while (Serial1.available())
+    static uint8_t rxState = 0, rxCmd = 0, rxParam = 0;
+    while (VoiceSerial.available())
     {
-        uint8_t b = Serial1.read();
+        uint8_t b = VoiceSerial.read();
         if (rxState == 0 && b == 0xAA)
             rxState = 1;
         else if (rxState == 1)
@@ -328,20 +365,26 @@ void VoiceAssistant_Loop()
             rxState = 0;
     }
 
-    // 2. 虚拟骑行里程累加器 (踏频转里程)
-    // 假设：自行车轮长2.1米，齿比假设为 2.5 (踩一圈轮子转2.5圈) -> 踩一圈约前进 5米
-    static unsigned long lastCalcTime = 0;
-    if (isRiding && millis() - lastCalcTime >= 1000)
+    static unsigned long lastCalc = 0;
+    if (isRiding && millis() - lastCalc >= 1000)
     {
-        lastCalcTime = millis();
+        lastCalc = millis();
         if (AppState.currentCadence > 0)
-        {
-            float speed_km_s = (AppState.currentCadence / 60.0) * 5.0 / 1000.0;
-            rideDistanceKm += speed_km_s;
-        }
+            rideDistanceKm += (AppState.currentCadence / 60.0f) * 5.0f / 1000.0f;
     }
 
-    // 3. 节拍器守护进程
+    if (AppState.currentMode == MODE_COUNTDOWN && AppState.isCountdownRunning)
+    {
+        uint32_t rem = AppState.countdownRemaining - ((millis() - AppState.countdownStartSysTime) / 1000);
+        if (rem <= 10 && rem > 0 && rem != lastReportedSec)
+        {
+            lastReportedSec = rem;
+            VoiceAssistant_Send1(0x04, rem);
+        }
+    }
+    else
+        lastReportedSec = 99;
+
     static unsigned long lastTick = 0;
     static bool buzzerState = false;
     if (metronomeEnabled && metronomeBpm > 0)
@@ -368,21 +411,6 @@ void VoiceAssistant_Loop()
         }
     }
 
-    // 4. 倒计时最后 10 秒死磕播报
-    if (AppState.currentMode == MODE_COUNTDOWN && AppState.isCountdownRunning)
-    {
-        uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
-        uint32_t rem = (AppState.countdownTotalSeconds > elapsed) ? AppState.countdownTotalSeconds - elapsed : 0;
-        if (rem <= 10 && rem > 0 && rem != lastReportedSec)
-        {
-            lastReportedSec = rem;
-            VoiceAssistant_SendVoice(0x04, rem, 0); // RX_0x04
-        }
-    }
-    else
-        lastReportedSec = 0;
-
-    // 5. 心率区间智能预警 (每10秒扫描一次)
     static unsigned long lastZoneCheck = 0;
     if (hrZone > 0 && millis() - lastZoneCheck >= 10000)
     {
@@ -393,16 +421,16 @@ void VoiceAssistant_Loop()
             if (hrZone == 1)
             {
                 if (hr < 110)
-                    VoiceAssistant_SendVoice(0x07, 0, 0); // RX_0x07: 心率下降
+                    VoiceAssistant_Send0(0x07);
                 else if (hr > 130)
-                    VoiceAssistant_SendVoice(0x08, 0, 0); // RX_0x08: 心率过高
+                    VoiceAssistant_Send0(0x08);
             }
             else if (hrZone == 2)
             {
                 if (hr < 130)
-                    VoiceAssistant_SendVoice(0x07, 0, 0);
+                    VoiceAssistant_Send0(0x07);
                 else if (hr > 150)
-                    VoiceAssistant_SendVoice(0x08, 0, 0);
+                    VoiceAssistant_Send0(0x08);
             }
         }
     }

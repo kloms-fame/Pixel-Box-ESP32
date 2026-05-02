@@ -72,22 +72,22 @@ void _float_to_double(uart_param_t* param) {
 }
 
 // action: RX_0x01
-void _uart_RX_0x01(unsigned char CS_1);
+void _uart_RX_0x01(unsigned char CountdownSet);
 
 // action: RX_0x02
-void _uart_RX_0x02(unsigned char CS_2, unsigned char CS_3);
+void _uart_RX_0x02(unsigned char TimeHor, unsigned char TimeMin);
 
 // action: RX_0x03
-void _uart_RX_0x03(unsigned char CS_4, unsigned char CS_5);
+void _uart_RX_0x03(unsigned char HeartRate, unsigned char Cadence);
 
 // action: RX_0x04
-void _uart_RX_0x04(unsigned char CS_6);
+void _uart_RX_0x04(unsigned char CountdownTenSec);
 
 // action: RX_0x05
-void _uart_RX_0x05();
+void _uart_RX_0x05(unsigned char Cadence);
 
 // action: RX_0x06
-void _uart_RX_0x06();
+void _uart_RX_0x06(unsigned char HeartRate);
 
 // action: RX_0x07
 void _uart_RX_0x07();
@@ -96,7 +96,7 @@ void _uart_RX_0x07();
 void _uart_RX_0x08();
 
 // action: RX_0x09
-void _uart_RX_0x09(unsigned char CS_7, unsigned char CS_8, unsigned char CS_9, unsigned char CS_10);
+void _uart_RX_0x09(unsigned char CS_KM_INT, unsigned char CS_KM_DEC, unsigned char CS_HOUR, unsigned char CS_MIN);
 
 #ifdef __cplusplus
 }
