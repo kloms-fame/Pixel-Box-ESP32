@@ -1,4 +1,5 @@
 #include "SensorHub.h"
+#include "ModeManager.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
 #include "WebGateway.h"
@@ -88,8 +89,6 @@ class ClientCallbacks : public NimBLEClientCallbacks
             AppState.currentCadence = 0;
             if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
             {
-                Display_Clear();
-                Display_Show();
             }
             Serial.println("[🧹 AUTO CLEAN] 所有外设已离线，清空数据缓存");
         }
@@ -194,12 +193,9 @@ void SensorHub_Connect(NimBLEAddress addr)
     updateSensorCache();
 
     if (pSvcCSC != nullptr && pSvcHRM == nullptr)
-        AppState.currentMode = MODE_SENSOR_CSC;
+        AppState_RequestMode(MODE_SENSOR_CSC);
     else
-        AppState.currentMode = MODE_SENSOR_HRM;
-
-    Display_Clear();
-    Display_Show();
+        AppState_RequestMode(MODE_SENSOR_HRM);
     WebGateway_BroadcastBasicState();
 
     if (pSvcHRM)

@@ -37,8 +37,6 @@ void VoiceInputMachine::startAlarmSelection()
 void VoiceInputMachine::startCountdownInput()
 {
     AppState.currentMode = MODE_COUNTDOWN;
-    Display_Clear();
-    Display_Show();
     currentState = V_WAIT_CDOWN;
     inputIndex = 0;
     lastInputSysTime = millis();
@@ -59,8 +57,6 @@ void VoiceInputMachine::feedDigit(uint8_t digit)
             targetAlarmIndex = digit - 1; // 转换为 0, 1, 2
             AppState.alarmDisplayIndex = targetAlarmIndex;
             AppState.currentMode = MODE_ALARM;
-            Display_Clear();
-            Display_Show();
 
             // 选好了，进入录入时间状态
             currentState = V_WAIT_ALARM;
@@ -122,8 +118,6 @@ void VoiceInputMachine::processAlarm()
         WebGateway_BroadcastAlarmState(idx);
 
         AppState.currentMode = MODE_ALARM;
-        Display_Clear();
-        Display_Show();
 
         VoiceAssistant_Send2(0xA2, hh, mm);
         Serial.printf("[⏰ 闹钟] 设定成功: %02d:%02d\n", hh, mm);
@@ -148,8 +142,7 @@ void VoiceInputMachine::processCountdown()
         AppState.isCountdownRunning = false;
 
         AppState.currentMode = MODE_COUNTDOWN;
-        Display_Clear();
-        Display_Show();
+
         WebGateway_BroadcastCdownConfig();
 
         VoiceAssistant_Send1(0xC2, mm);

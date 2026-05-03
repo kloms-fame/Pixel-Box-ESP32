@@ -47,19 +47,17 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             // 【保留】原逻辑，直接操作 NVS 和 FastLED
             AppState.saveBrightness(b);
             Display_SetBrightness(b);
-            Display_Show();
+
             WebGateway_BroadcastBasicState();
         }
         else if (cmd == 0x02 && rx.length() >= 4)
         {
             Display_Fill(CRGB(rx[1], rx[2], rx[3]));
-            Display_Show();
+
             AppState.currentMode = MODE_OFF;
         }
         else if (cmd == 0x03)
         {
-            Display_Clear();
-            Display_Show();
             AppState.currentMode = MODE_OFF;
             Serial.println("[📺 UI] 执行强制息屏");
         }
@@ -69,8 +67,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
             struct timeval tv = {.tv_sec = (time_t)ts, .tv_usec = 0};
             settimeofday(&tv, NULL);
             AppState.currentMode = MODE_CLOCK;
-            Display_Clear();
-            Display_Show();
             Serial.println("[🕒 UI] 时间同步，切入时钟模式");
         }
         else if (cmd == 0x05)
@@ -103,16 +99,12 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                 else
                     AppState.currentMode = MODE_SENSOR_HRM;
             }
-            Display_Clear();
-            Display_Show();
             WebGateway_BroadcastBasicState();
             Serial.println("[🚴 UI] 切换并进入运动数据面板");
         }
         else if (cmd == 0x09)
         {
             AppState.currentMode = MODE_TIMER;
-            Display_Clear();
-            Display_Show();
         }
         else if (cmd == 0x0A && rx.length() >= 2)
         {
@@ -137,9 +129,7 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         else if (cmd == 0x0B)
         {
             AppState.currentMode = MODE_COUNTDOWN;
-            // [统一渲染] 剥夺直接硬件操作，交由主循环处理
-            // Display_Clear();
-            // Display_Show();
+
             AppState.needRender = true;
         }
         else if (cmd == 0x0C && rx.length() >= 2)
@@ -180,8 +170,6 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
                 AppState.currentMode = MODE_ALARM;
                 AppState.alarmDisplayIndex = 0;
             }
-            Display_Clear();
-            Display_Show();
         }
         else if (cmd == 0x0F && rx.length() >= 5)
         {

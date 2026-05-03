@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include "EventBus.h"
+#include "ModeManager.h"
 #include <NimBLEDevice.h>
 #include "Config.h"
 #include "TimeSync.h"
@@ -322,9 +323,7 @@ void loop()
         AppState.alarms[i].isRinging = true;
         AppState.alarms[i].ringStartSysTime = millis();
         if (AppState.currentMode != MODE_ALARM)
-          AppState.previousMode = AppState.currentMode;
-        AppState.currentMode = MODE_ALARM;
-        AppState.needRender = true;
+          AppState_RequestMode(MODE_ALARM); // 统一入口
       }
     }
   }

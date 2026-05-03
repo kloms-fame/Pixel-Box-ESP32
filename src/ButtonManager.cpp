@@ -1,4 +1,5 @@
 #include "ButtonManager.h"
+#include "ModeManager.h"
 #include "EventBus.h"
 #include "Config.h"
 #include "GlobalState.h"
@@ -31,11 +32,7 @@ bool checkAndDismissAlerts()
     }
     if (alerted)
     {
-        AppState.currentMode = AppState.previousMode;
-        // [统一渲染] 注释原有硬件调用，触发渲染标记
-        // Display_Clear();
-        // Display_Show();
-        AppState.needRender = true;
+        AppState_RequestMode(AppState.previousMode);
         WebGateway_BroadcastBasicState();
         return true;
     }
@@ -74,9 +71,7 @@ void onModeClick()
     e.value = m;
     Event_Push(e);
 
-    AppState.currentMode = (AppMode)m;
-    Display_Clear();
-    Display_Show();
+    AppState_RequestMode((AppMode)m);
     WebGateway_BroadcastBasicState();
 }
 
@@ -87,9 +82,7 @@ void onPlusClick()
 
     if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        AppState.currentMode = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode((AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM); // ✅ 统一入口
         WebGateway_BroadcastBasicState();
     }
     else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
@@ -103,8 +96,7 @@ void onPlusClick()
     else if (AppState.currentMode == MODE_ALARM)
     {
         AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
-        Display_Clear();
-        Display_Show();
+        AppState.needRender = true; // ✅ 仅触发渲染，由 main 循环统一刷新
     }
     else
     {
@@ -126,8 +118,6 @@ void onMinusClick()
     if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
         AppState.currentMode = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
-        Display_Clear();
-        Display_Show();
         WebGateway_BroadcastBasicState();
     }
     else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
@@ -141,8 +131,6 @@ void onMinusClick()
     else if (AppState.currentMode == MODE_ALARM)
     {
         AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 2) % 3;
-        Display_Clear();
-        Display_Show();
     }
     else
     {

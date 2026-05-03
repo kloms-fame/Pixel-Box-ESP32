@@ -1,5 +1,6 @@
 #include "VoiceAssistant.h"
 #include "EventBus.h"
+#include "ModeManager.h"
 #include "VoiceInputMachine.h" // 【新增】引入状态机
 #include "GlobalState.h"
 #include "SensorHub.h"
@@ -103,9 +104,7 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         AppState.countdownTotalSeconds = param * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         AppState.isCountdownRunning = false;
-        AppState.currentMode = MODE_COUNTDOWN;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_COUNTDOWN);
         VoiceAssistant_Send1(0x01, param);
         break;
     case 0x0D:
@@ -125,9 +124,7 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
             AppState.isCountdownRunning = false;
             AppState.isCountdownFinished = false;
         }
-        AppState.currentMode = MODE_COUNTDOWN;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_COUNTDOWN);
         break;
     case 0x0A:
         if (param == 1)
@@ -145,9 +142,7 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
             AppState.timerElapsed = 0;
             AppState.isTimerRunning = false;
         }
-        AppState.currentMode = MODE_TIMER;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_TIMER);
         break;
     case 0x34:
         metronomeEnabled = true;
@@ -230,90 +225,63 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
             AppState.saveBrightness(b);
             Display_SetBrightness(b);
         }
-        Display_Show();
         break;
     case 0x03:
-        AppState.currentMode = MODE_OFF;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_OFF);
         break;
     case 0x04:
     case 0x52:
-        AppState.currentMode = MODE_CLOCK;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_CLOCK);
         break;
     case 0x54:
-        AppState.currentMode = MODE_TIMER;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_TIMER);
         break;
     case 0x55:
-        AppState.currentMode = MODE_COUNTDOWN;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_COUNTDOWN);
         break;
     case 0x56:
-        AppState.currentMode = MODE_ALARM;
-        // [统一渲染] 走主循环管线刷新
-        // Display_Clear();
-        // Display_Show();
-        AppState.needRender = true;
+        AppState_RequestMode(MODE_ALARM);
         break;
     case 0x58:
-        AppState.currentMode = MODE_SENSOR_CSC;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_SENSOR_CSC);
         break;
     case 0x59:
-        AppState.currentMode = MODE_SENSOR_HRM;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_SENSOR_HRM);
         break;
     case 0x5A:
-        AppState.currentMode = MODE_ALARM;
+        AppState_RequestMode(MODE_ALARM);
         AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
-        Display_Clear();
-        Display_Show();
         break;
     case 0x5B:
-        AppState.currentMode = MODE_ALARM;
+        AppState_RequestMode(MODE_ALARM);
         {
             uint8_t idx = AppState.alarmDisplayIndex;
             AppState.saveAlarm(idx, true, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
             WebGateway_BroadcastAlarmState(idx);
-            Display_Clear();
-            Display_Show();
         }
         break;
     case 0x5C:
-        AppState.currentMode = MODE_ALARM;
+        AppState_RequestMode(MODE_ALARM);
         {
             uint8_t idx = AppState.alarmDisplayIndex;
             AppState.saveAlarm(idx, false, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
             WebGateway_BroadcastAlarmState(idx);
-            Display_Clear();
-            Display_Show();
         }
         break;
     case 0x5D:
-        AppState.currentMode = MODE_ALARM;
+        AppState_RequestMode(MODE_ALARM);
         {
             uint8_t idx = AppState.alarmDisplayIndex;
             AppState.saveAlarm(idx, false, 0, 0);
             AppState.alarms[idx].isSet = false;
             WebGateway_BroadcastAlarmState(idx);
-            Display_Clear();
-            Display_Show();
         }
         break;
     case 0x32:
         for (int i = 0; i < 3; i++)
             AppState.alarms[i].isRinging = false;
         AppState.isCountdownFinished = false;
-        AppState.currentMode = MODE_CLOCK;
-        Display_Clear();
-        Display_Show();
+        AppState_RequestMode(MODE_CLOCK);
         break;
     case 0x33:
         for (int i = 0; i < 3; i++)
