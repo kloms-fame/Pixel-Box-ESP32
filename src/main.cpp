@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "EventBus.h"
 #include <NimBLEDevice.h>
 #include "Config.h"
 #include "TimeSync.h"
@@ -11,46 +12,36 @@
 
 void renderClock()
 {
-  static unsigned long lastUpdate = 0;
-  if (millis() - lastUpdate >= 500)
+  // ❌ 删除了 lastUpdate 限速和 AppState.needRender = true
+  time_t now;
+  struct tm timeinfo;
+  time(&now);
+  localtime_r(&now, &timeinfo);
+
+  CRGB c = CRGB(0, 180, 255);
+  Display_DrawDigit(0, 1, timeinfo.tm_hour / 10, c);
+  Display_DrawDigit(4, 1, timeinfo.tm_hour % 10, c);
+
+  // 这里的秒闪烁属于“动画逻辑”，依赖时间戳，必须保留
+  if (timeinfo.tm_sec % 2 == 0)
   {
-    lastUpdate = millis();
-    time_t now;
-    struct tm timeinfo;
-    time(&now);
-    localtime_r(&now, &timeinfo);
-    Display_Clear();
-    CRGB c = CRGB(0, 180, 255);
-    Display_DrawDigit(0, 1, timeinfo.tm_hour / 10, c);
-    Display_DrawDigit(4, 1, timeinfo.tm_hour % 10, c);
-    if (timeinfo.tm_sec % 2 == 0)
-    {
-      Display_DrawPixel(7, 2, c);
-      Display_DrawPixel(7, 4, c);
-    }
-    Display_DrawDigit(9, 1, timeinfo.tm_min / 10, c);
-    Display_DrawDigit(13, 1, timeinfo.tm_min % 10, c);
-    Display_Show();
+    Display_DrawPixel(7, 2, c);
+    Display_DrawPixel(7, 4, c);
   }
+  Display_DrawDigit(9, 1, timeinfo.tm_min / 10, c);
+  Display_DrawDigit(13, 1, timeinfo.tm_min % 10, c);
 }
 
-// 【修复核心 3】完美剥离的运动面板显示逻辑
 void renderSensor(bool showHRM)
 {
-  static unsigned long lastFrame = 0;
-  if (millis() - lastFrame < 100)
-    return;
-  lastFrame = millis();
-
-  Display_Clear();
-
+  // ❌ 删除了 lastFrame 限速和 AppState.needRender = true
   if (showHRM)
   {
     bool isConnected = SensorHub_HasHRM();
     CRGB hrColor = CRGB::Red;
+    // 动画逻辑保留
     bool isBeating = (AppState.currentHR > 0 && (millis() / 500) % 2 == 0);
 
-    // 渲染心形图标
     if (isBeating || !isConnected || AppState.currentHR == 0)
     {
       Display_DrawPixel(0, 2, hrColor);
@@ -74,17 +65,13 @@ void renderSensor(bool showHRM)
         Display_DrawDigit(10, 1, hr % 10, hrColor);
       }
       else
-      {
         Display_DrawDigit(8, 1, hr, hrColor);
-      }
     }
     else
     {
       Display_DrawDigit(7, 1, 10, hrColor);
       Display_DrawDigit(11, 1, 10, hrColor);
     }
-
-    // 右上角指示灯：只看心率是否连着
     CRGB statusColor = isConnected ? CRGB::Green : CRGB::Red;
     Display_DrawPixel(15, 0, statusColor);
   }
@@ -94,7 +81,6 @@ void renderSensor(bool showHRM)
     CRGB cadColor = CRGB(0, 255, 128);
     bool isPedaling = (AppState.currentCadence > 0 && (millis() / 250) % 2 == 0);
 
-    // 渲染曲柄图标
     if (isPedaling || !isConnected || AppState.currentCadence == 0)
     {
       Display_DrawPixel(0, 1, cadColor);
@@ -119,80 +105,54 @@ void renderSensor(bool showHRM)
         Display_DrawDigit(10, 1, cad % 10, cadColor);
       }
       else
-      {
         Display_DrawDigit(8, 1, cad, cadColor);
-      }
     }
     else
     {
       Display_DrawDigit(7, 1, 10, cadColor);
       Display_DrawDigit(11, 1, 10, cadColor);
     }
-
-    // 右上角指示灯：只看踏频是否连着
     CRGB statusColor = isConnected ? CRGB::Green : CRGB::Red;
     Display_DrawPixel(15, 0, statusColor);
   }
-
-  Display_Show();
 }
 
 void renderTimer()
 {
-  static unsigned long lastUpdate = 0;
-  if (millis() - lastUpdate >= 100)
+  // ❌ 删除了 lastUpdate 限速
+  unsigned long ms = AppState.timerElapsed;
+  if (AppState.isTimerRunning)
+    ms += (millis() - AppState.timerStartTime);
+  uint16_t secs = ms / 1000;
+  uint8_t m = (secs / 60) % 100;
+  uint8_t s = secs % 60;
+  CRGB c = CRGB(255, 150, 0);
+  Display_DrawDigit(0, 1, m / 10, c);
+  Display_DrawDigit(4, 1, m % 10, c);
+  if (!AppState.isTimerRunning || (millis() / 500) % 2 == 0)
   {
-    lastUpdate = millis();
-    unsigned long ms = AppState.timerElapsed;
-    if (AppState.isTimerRunning)
-      ms += (millis() - AppState.timerStartTime);
-    uint16_t secs = ms / 1000;
-    uint8_t m = (secs / 60) % 100;
-    uint8_t s = secs % 60;
-    Display_Clear();
-    CRGB c = CRGB(255, 150, 0);
-    Display_DrawDigit(0, 1, m / 10, c);
-    Display_DrawDigit(4, 1, m % 10, c);
-    if (!AppState.isTimerRunning || (millis() / 500) % 2 == 0)
-    {
-      Display_DrawPixel(7, 2, c);
-      Display_DrawPixel(7, 4, c);
-    }
-    Display_DrawDigit(9, 1, s / 10, c);
-    Display_DrawDigit(13, 1, s % 10, c);
-    Display_Show();
+    Display_DrawPixel(7, 2, c);
+    Display_DrawPixel(7, 4, c);
   }
+  Display_DrawDigit(9, 1, s / 10, c);
+  Display_DrawDigit(13, 1, s % 10, c);
 }
 
 void renderCountdown()
 {
-  static unsigned long lastUpdate = 0;
-  if (millis() - lastUpdate >= 100)
+  // ❌ 删除了 lastUpdate 限速
+  uint32_t rem = AppState.countdownRemaining;
+  if (AppState.isCountdownRunning)
   {
-    lastUpdate = millis();
-    uint32_t rem = AppState.countdownRemaining;
-    if (AppState.isCountdownRunning)
+    uint32_t el = (millis() - AppState.countdownStartSysTime) / 1000;
+    rem = (el < AppState.countdownRemaining) ? (AppState.countdownRemaining - el) : 0;
+  }
+  CRGB c = CRGB(180, 0, 255);
+  if (AppState.isCountdownFinished)
+  {
+    if (millis() - AppState.countdownFinishSysTime <= 10000)
     {
-      uint32_t el = (millis() - AppState.countdownStartSysTime) / 1000;
-      rem = (el < AppState.countdownRemaining) ? (AppState.countdownRemaining - el) : 0;
-    }
-    Display_Clear();
-    CRGB c = CRGB(180, 0, 255);
-    if (AppState.isCountdownFinished)
-    {
-      if (millis() - AppState.countdownFinishSysTime <= 10000)
-      {
-        if ((millis() / 250) % 2 == 0)
-        {
-          Display_DrawDigit(0, 1, 0, c);
-          Display_DrawDigit(4, 1, 0, c);
-          Display_DrawPixel(7, 2, c);
-          Display_DrawPixel(7, 4, c);
-          Display_DrawDigit(9, 1, 0, c);
-          Display_DrawDigit(13, 1, 0, c);
-        }
-      }
-      else
+      if ((millis() / 250) % 2 == 0)
       {
         Display_DrawDigit(0, 1, 0, c);
         Display_DrawDigit(4, 1, 0, c);
@@ -204,63 +164,41 @@ void renderCountdown()
     }
     else
     {
-      uint8_t m = (rem / 60) % 100;
-      uint8_t s = rem % 60;
-      Display_DrawDigit(0, 1, m / 10, c);
-      Display_DrawDigit(4, 1, m % 10, c);
-      if (!AppState.isCountdownRunning || (millis() / 500) % 2 == 0)
-      {
-        Display_DrawPixel(7, 2, c);
-        Display_DrawPixel(7, 4, c);
-      }
-      Display_DrawDigit(9, 1, s / 10, c);
-      Display_DrawDigit(13, 1, s % 10, c);
+      Display_DrawDigit(0, 1, 0, c);
+      Display_DrawDigit(4, 1, 0, c);
+      Display_DrawPixel(7, 2, c);
+      Display_DrawPixel(7, 4, c);
+      Display_DrawDigit(9, 1, 0, c);
+      Display_DrawDigit(13, 1, 0, c);
     }
-    Display_Show();
+  }
+  else
+  {
+    uint8_t m = (rem / 60) % 100;
+    uint8_t s = rem % 60;
+    Display_DrawDigit(0, 1, m / 10, c);
+    Display_DrawDigit(4, 1, m % 10, c);
+    if (!AppState.isCountdownRunning || (millis() / 500) % 2 == 0)
+    {
+      Display_DrawPixel(7, 2, c);
+      Display_DrawPixel(7, 4, c);
+    }
+    Display_DrawDigit(9, 1, s / 10, c);
+    Display_DrawDigit(13, 1, s % 10, c);
   }
 }
 
 void renderAlarm()
 {
-  static unsigned long lastUpdate = 0;
-  if (millis() - lastUpdate >= 100)
-  {
-    lastUpdate = millis();
-    Display_Clear();
-    AlarmData &al = AppState.alarms[AppState.alarmDisplayIndex];
-    CRGB c = al.enabled ? CRGB::Green : CRGB::Red;
+  // ❌ 删除了 lastUpdate 限速
+  AlarmData &al = AppState.alarms[AppState.alarmDisplayIndex];
+  CRGB c = al.enabled ? CRGB::Green : CRGB::Red;
 
-    if (al.isRinging)
+  if (al.isRinging)
+  {
+    if (millis() - al.ringStartSysTime <= 10000)
     {
-      if (millis() - al.ringStartSysTime <= 10000)
-      {
-        if ((millis() / 250) % 2 == 0)
-        {
-          Display_DrawDigit(0, 1, al.hour / 10, c);
-          Display_DrawDigit(4, 1, al.hour % 10, c);
-          Display_DrawPixel(7, 2, c);
-          Display_DrawPixel(7, 4, c);
-          Display_DrawDigit(9, 1, al.minute / 10, c);
-          Display_DrawDigit(13, 1, al.minute % 10, c);
-        }
-      }
-      else
-      {
-        al.isRinging = false;
-      }
-    }
-    else
-    {
-      if (!al.isSet)
-      {
-        Display_DrawDigit(0, 1, 10, c);
-        Display_DrawDigit(4, 1, 10, c);
-        Display_DrawPixel(7, 2, c);
-        Display_DrawPixel(7, 4, c);
-        Display_DrawDigit(9, 1, 10, c);
-        Display_DrawDigit(13, 1, 10, c);
-      }
-      else
+      if ((millis() / 250) % 2 == 0)
       {
         Display_DrawDigit(0, 1, al.hour / 10, c);
         Display_DrawDigit(4, 1, al.hour % 10, c);
@@ -269,10 +207,32 @@ void renderAlarm()
         Display_DrawDigit(9, 1, al.minute / 10, c);
         Display_DrawDigit(13, 1, al.minute % 10, c);
       }
-      for (int i = 0; i <= AppState.alarmDisplayIndex; i++)
-        Display_DrawPixel(i * 2, 7, CRGB(128, 128, 128));
     }
-    Display_Show();
+    else
+      al.isRinging = false;
+  }
+  else
+  {
+    if (!al.isSet)
+    {
+      Display_DrawDigit(0, 1, 10, c);
+      Display_DrawDigit(4, 1, 10, c);
+      Display_DrawPixel(7, 2, c);
+      Display_DrawPixel(7, 4, c);
+      Display_DrawDigit(9, 1, 10, c);
+      Display_DrawDigit(13, 1, 10, c);
+    }
+    else
+    {
+      Display_DrawDigit(0, 1, al.hour / 10, c);
+      Display_DrawDigit(4, 1, al.hour % 10, c);
+      Display_DrawPixel(7, 2, c);
+      Display_DrawPixel(7, 4, c);
+      Display_DrawDigit(9, 1, al.minute / 10, c);
+      Display_DrawDigit(13, 1, al.minute % 10, c);
+    }
+    for (int i = 0; i <= AppState.alarmDisplayIndex; i++)
+      Display_DrawPixel(i * 2, 7, CRGB(128, 128, 128));
   }
 }
 
@@ -284,7 +244,6 @@ void setup()
   // 🌟 修复：先初始化屏幕，点亮右上角黄色指示灯，表示正在配网校时
   Display_Init();
   Display_DrawPixel(15, 0, CRGB::Yellow);
-  Display_Show();
 
   // 【核心执行】：在蓝牙激活前，用开机的两秒钟闪电联网校时，随后抹除 WiFi 硬件状态！
   TimeSync_Init();
@@ -299,9 +258,18 @@ void setup()
 
 void loop()
 {
-  ButtonManager_Loop();
+  EventMsg msg;
+  while (Event_Pop(&msg))
+  {
+    Serial.print("[EVENT] type=");
+    Serial.print(msg.type);
+    Serial.print(" action=");
+    Serial.print(msg.action);
+    Serial.print(" value=");
+    Serial.println(msg.value);
+  }
 
-  // 【终极修复】：必须加上这一行！让单片机每一毫秒都在静默监听语音模块的串口数据！
+  ButtonManager_Loop();
   VoiceAssistant_Loop();
 
   // ================= 异步任务队列 =================
@@ -326,7 +294,7 @@ void loop()
     else if (cmd == 10)
       SensorHub_TriggerAutoReconnect(true);
     else if (cmd == 99)
-      AppState.factoryReset(); // 【新增】在安全的上下文环境中执行重置
+      AppState.factoryReset();
     else if (cmd == 11)
       SensorHub_TriggerAutoReconnect(true, 1);
     else if (cmd == 12)
@@ -356,52 +324,50 @@ void loop()
         if (AppState.currentMode != MODE_ALARM)
           AppState.previousMode = AppState.currentMode;
         AppState.currentMode = MODE_ALARM;
-        AppState.alarmDisplayIndex = i;
+        AppState.needRender = true;
       }
     }
   }
 
-  if (millis() - AppState.lastCrankSysTime > 3000 && AppState.currentCadence != 0)
-    AppState.currentCadence = 0;
-
-  if (AppState.isCountdownRunning)
+  // ================= 统一渲染管线 (修复版) =================
+  static unsigned long lastRender = 0;
+  if (AppState.needRender || millis() - lastRender > 33)
   {
-    uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
-    if (elapsed >= AppState.countdownRemaining)
+    lastRender = millis();
+    AppState.needRender = false;
+
+    // 1. 唯一清屏点
+    Display_Clear();
+
+    // 2. 调用对应渲染函数
+    switch (AppState.currentMode)
     {
-      AppState.countdownRemaining = 0;
-      AppState.isCountdownRunning = false;
-      AppState.isCountdownFinished = true;
-      AppState.countdownFinishSysTime = millis();
-      if (AppState.currentMode != MODE_COUNTDOWN)
-        AppState.previousMode = AppState.currentMode;
-      AppState.currentMode = MODE_COUNTDOWN;
+    case MODE_CLOCK:
+      renderClock();
+      break;
+    case MODE_SENSOR_HRM:
+      renderSensor(true);
+      break;
+    case MODE_SENSOR_CSC:
+      renderSensor(false);
+      break;
+    case MODE_TIMER:
+      renderTimer();
+      break;
+    case MODE_COUNTDOWN:
+      renderCountdown();
+      break;
+    case MODE_ALARM:
+      renderAlarm();
+      break;
+    case MODE_OFF:
+      break;
     }
-  }
 
-  switch (AppState.currentMode)
-  {
-  case MODE_CLOCK:
-    renderClock();
-    break;
-  case MODE_SENSOR_HRM:
-    renderSensor(true);
-    break;
-  case MODE_SENSOR_CSC:
-    renderSensor(false);
-    break;
-  case MODE_TIMER:
-    renderTimer();
-    break;
-  case MODE_COUNTDOWN:
-    renderCountdown();
-    break;
-  case MODE_ALARM:
-    renderAlarm();
-    break;
-  case MODE_OFF:
-    break;
-  }
+    // 3. 唯一推屏点
+    Display_Show();
+  } // <--- 注意这里的括号！
 
+  // ✅ 必须放在所有逻辑的最外层，保证每一次 loop 都能让出 CPU 10毫秒
   delay(10);
-}
+} // end of loop()

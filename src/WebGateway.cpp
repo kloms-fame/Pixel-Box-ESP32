@@ -1,4 +1,5 @@
 #include "WebGateway.h"
+#include "EventBus.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
 #include "SensorHub.h"
@@ -34,10 +35,20 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
 
         if (cmd == 0x01 && rx.length() >= 2)
         {
-            Display_SetBrightness(rx[1]);
+            uint8_t b = rx[1];
+
+            // 【新增】推入修改亮度事件
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_BRIGHTNESS_SET;
+            e.value = b;
+            Event_Push(e);
+
+            // 【保留】原逻辑，直接操作 NVS 和 FastLED
+            AppState.saveBrightness(b);
+            Display_SetBrightness(b);
             Display_Show();
-            AppState.saveBrightness(rx[1]);
-            Serial.printf("[🔆 UI] 亮度配置已下发: %d\n", rx[1]);
+            WebGateway_BroadcastBasicState();
         }
         else if (cmd == 0x02 && rx.length() >= 4)
         {
@@ -126,8 +137,10 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         else if (cmd == 0x0B)
         {
             AppState.currentMode = MODE_COUNTDOWN;
-            Display_Clear();
-            Display_Show();
+            // [统一渲染] 剥夺直接硬件操作，交由主循环处理
+            // Display_Clear();
+            // Display_Show();
+            AppState.needRender = true;
         }
         else if (cmd == 0x0C && rx.length() >= 2)
         {

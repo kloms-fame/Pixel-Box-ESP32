@@ -1,4 +1,5 @@
 #include "VoiceAssistant.h"
+#include "EventBus.h"
 #include "VoiceInputMachine.h" // 【新增】引入状态机
 #include "GlobalState.h"
 #include "SensorHub.h"
@@ -84,6 +85,21 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
 
     // ... (下方是你原本 V26 的所有 case 指令，完全保持原样，无需修改) ...
     case 0x0C:
+        // 【新增】记录设定倒计时的事件
+        EventMsg eSet;
+        eSet.type = EVT_VOICE;
+        eSet.action = ACT_CDOWN_SET;
+        eSet.value = param * 60;
+        Event_Push(eSet);
+
+        // 【新增】记录切屏到倒计时的事件
+        EventMsg eMode;
+        eMode.type = EVT_VOICE;
+        eMode.action = ACT_MODE_SWITCH;
+        eMode.value = MODE_COUNTDOWN;
+        Event_Push(eMode);
+
+        // 【保留】所有旧代码，继续暴力修改 AppState 和直接刷屏
         AppState.countdownTotalSeconds = param * 60;
         AppState.countdownRemaining = AppState.countdownTotalSeconds;
         AppState.isCountdownRunning = false;
@@ -239,8 +255,10 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         break;
     case 0x56:
         AppState.currentMode = MODE_ALARM;
-        Display_Clear();
-        Display_Show();
+        // [统一渲染] 走主循环管线刷新
+        // Display_Clear();
+        // Display_Show();
+        AppState.needRender = true;
         break;
     case 0x58:
         AppState.currentMode = MODE_SENSOR_CSC;

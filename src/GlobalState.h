@@ -40,6 +40,7 @@ public:
         return instance;
     }
     void begin();
+    bool needRender = true; // 开机默认渲染一次
 
     uint8_t brightness = BRIGHTNESS_DEFAULT;
     bool autoReconnect = false;

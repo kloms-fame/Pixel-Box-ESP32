@@ -1,4 +1,5 @@
 #include "ButtonManager.h"
+#include "EventBus.h"
 #include "Config.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
@@ -31,8 +32,10 @@ bool checkAndDismissAlerts()
     if (alerted)
     {
         AppState.currentMode = AppState.previousMode;
-        Display_Clear();
-        Display_Show();
+        // [统一渲染] 注释原有硬件调用，触发渲染标记
+        // Display_Clear();
+        // Display_Show();
+        AppState.needRender = true;
         WebGateway_BroadcastBasicState();
         return true;
     }
@@ -64,6 +67,12 @@ void onModeClick()
         m = MODE_OFF;
     else if (m == MODE_OFF)
         m = MODE_CLOCK;
+
+    EventMsg e;
+    e.type = EVT_BTN;
+    e.action = ACT_MODE_SWITCH;
+    e.value = m;
+    Event_Push(e);
 
     AppState.currentMode = (AppMode)m;
     Display_Clear();
