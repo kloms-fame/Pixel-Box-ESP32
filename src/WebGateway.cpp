@@ -90,13 +90,23 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         else if (cmd == 0x06 && rx.length() > 2)
         {
             AppState.pendingAddr = NimBLEAddress(rx.substr(2), rx[1]);
-            AppState.pendingCmd = 6;
+            // ✅ 修复：发事件，替代 pendingCmd=6
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_SENSOR_CMD;
+            e.value = 6;
+            Event_Push(e);
             Serial.printf("[⚡ TASK] 连接指令入队 -> %s\n", rx.substr(2).c_str());
         }
         else if (cmd == 0x07 && rx.length() > 2)
         {
             AppState.pendingAddr = NimBLEAddress(rx.substr(2), rx[1]);
-            AppState.pendingCmd = 7;
+            // ✅ 修复：发事件，替代 pendingCmd=7
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_SENSOR_CMD;
+            e.value = 7;
+            Event_Push(e);
             Serial.printf("[⚡ TASK] 断开指令入队 -> %s\n", rx.substr(2).c_str());
         }
         else if (cmd == 0x08)
@@ -339,7 +349,12 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         else if (cmd == 0xFF)
         {
             Serial.println("[🌐 WEB->ESP] 收到恢复出厂设置指令，加入主循环安全执行队列...");
-            AppState.pendingCmd = 99;
+            // ✅ 修复：发事件，替代 pendingCmd=99
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_SENSOR_CMD;
+            e.value = 99;
+            Event_Push(e);
         }
     }
 };

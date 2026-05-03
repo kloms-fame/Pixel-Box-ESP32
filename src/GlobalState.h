@@ -79,7 +79,6 @@ public:
     unsigned long countdownStartSysTime = 0;
     unsigned long countdownFinishSysTime = 0;
     uint8_t alarmDisplayIndex = 0;
-    volatile int pendingCmd = 0;
     NimBLEAddress pendingAddr;
 };
 #define AppState AppStateManager::getInstance()

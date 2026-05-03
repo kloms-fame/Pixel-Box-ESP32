@@ -98,7 +98,11 @@ void onPlusClick()
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
-        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
+        EventMsg e;
+        e.type = EVT_BTN;
+        e.action = ACT_ALARM_SET_INDEX;
+        e.value = (AppState.alarmDisplayIndex + 1) % 3;
+        Event_Push(e);
         AppState.needRender = true; // ✅ 仅触发渲染，由 main 循环统一刷新
     }
     else
@@ -120,7 +124,11 @@ void onMinusClick()
 
     if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        AppState.currentMode = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
+        EventMsg e;
+        e.type = EVT_BTN;
+        e.action = ACT_MODE_SWITCH;
+        e.value = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
+        Event_Push(e);
         WebGateway_BroadcastBasicState();
     }
     else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
@@ -140,9 +148,11 @@ void onMinusClick()
         int b = AppState.brightness - 5;
         if (b < 5)
             b = 5;
-        AppState.saveBrightness(b);
-        FastLED.setBrightness(b);
-        FastLED.show();
+        EventMsg e;
+        e.type = EVT_BTN;
+        e.action = ACT_SYS_BRIGHTNESS;
+        e.value = b;
+        Event_Push(e);
         WebGateway_BroadcastBasicState();
     }
 }
@@ -182,11 +192,13 @@ void onOkClick()
 
     if (AppState.currentMode == MODE_SENSOR_HRM)
     {
-        AppState.pendingCmd = 11; // 仅寻呼心率
+        EventMsg e = {EVT_BTN, ACT_SENSOR_CMD, 11};
+        Event_Push(e); // 仅寻呼心率
     }
     else if (AppState.currentMode == MODE_SENSOR_CSC)
     {
-        AppState.pendingCmd = 12; // 仅寻呼踏频
+        EventMsg e = {EVT_VOICE, ACT_SENSOR_CMD, 12};
+        Event_Push(e); // 仅寻呼踏频
     }
     else if (AppState.currentMode == MODE_TIMER)
     {
@@ -230,11 +242,13 @@ void onOkLongPress()
 
     if (AppState.currentMode == MODE_SENSOR_HRM)
     {
-        AppState.pendingCmd = 13; // 仅断开心率
+        EventMsg e = {EVT_VOICE, ACT_SENSOR_CMD, 13};
+        Event_Push(e); // 仅断开心率
     }
     else if (AppState.currentMode == MODE_SENSOR_CSC)
     {
-        AppState.pendingCmd = 14; // 仅断开踏频
+        EventMsg e = {EVT_VOICE, ACT_SENSOR_CMD, 14};
+        Event_Push(e); // 仅断开踏频
     }
     else if (AppState.currentMode == MODE_TIMER)
     {

@@ -172,16 +172,36 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
         VoiceAssistant_Send1(0x06, AppState.currentHR);
         break;
     case 0x11:
-        AppState.pendingCmd = 11;
+        // 语音指令：仅连接心率
+        EventMsg e11;
+        e11.type = EVT_VOICE;
+        e11.action = ACT_SENSOR_CMD;
+        e11.value = 11;
+        Event_Push(e11);
         break;
     case 0x12:
-        AppState.pendingCmd = 12;
+        // 语音指令：仅连接踏频
+        EventMsg e12;
+        e12.type = EVT_VOICE;
+        e12.action = ACT_SENSOR_CMD;
+        e12.value = 12;
+        Event_Push(e12);
         break;
     case 0x13:
-        AppState.pendingCmd = 13;
+        // 语音指令：仅断开心率
+        EventMsg e13;
+        e13.type = EVT_VOICE;
+        e13.action = ACT_SENSOR_CMD;
+        e13.value = 13;
+        Event_Push(e13);
         break;
     case 0x14:
-        AppState.pendingCmd = 14;
+        // 语音指令：仅断开踏频
+        EventMsg e14;
+        e14.type = EVT_VOICE;
+        e14.action = ACT_SENSOR_CMD;
+        e14.value = 14;
+        Event_Push(e14);
         break;
     case 0x43:
         isRiding = true;

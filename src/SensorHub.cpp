@@ -1,4 +1,5 @@
 #include "SensorHub.h"
+#include "EventBus.h"
 #include "ModeManager.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
@@ -116,28 +117,31 @@ ProxyScanCallbacks proxyScanCb;
 
 class AutoReconnectScanCallbacks : public NimBLEAdvertisedDeviceCallbacks
 {
-    void onResult(NimBLEAdvertisedDevice *device)
+    void onResult(NimBLEAdvertisedDevice *device) override
     {
         string mac = device->getAddress().toString();
         bool matchHRM = (currentScanTarget == 0 || currentScanTarget == 1) && (mac == AppState.savedHrmMac);
         bool matchCSC = (currentScanTarget == 0 || currentScanTarget == 2) && (mac == AppState.savedCscMac);
         if (matchHRM || matchCSC)
         {
-            if (mac == AppState.savedHrmMac || mac == AppState.savedCscMac)
+            bool alreadyActive = false;
+            for (auto c : activeClients)
             {
-                bool alreadyActive = false;
-                for (auto c : activeClients)
-                {
-                    if (c->getPeerAddress() == device->getAddress())
-                        alreadyActive = true;
-                }
-                if (!alreadyActive && AppState.pendingCmd != 6)
-                {
-                    Serial.printf("[⚡ AUTO-RECONNECT] 发现设备 %s，立即刹停雷达并直连！\n", mac.c_str());
-                    NimBLEDevice::getScan()->stop();
-                    AppState.pendingAddr = device->getAddress();
-                    AppState.pendingCmd = 6;
-                }
+                if (c->getPeerAddress() == device->getAddress())
+                    alreadyActive = true;
+            }
+            // ✅ 修复：删除 pendingCmd 判断，直接发送事件
+            if (!alreadyActive)
+            {
+                Serial.printf("[⚡ AUTO-RECONNECT] 发现设备 %s，立即刹停雷达并直连！\n", mac.c_str());
+                NimBLEDevice::getScan()->stop();
+                AppState.pendingAddr = device->getAddress();
+                // 发送连接事件 = 原 pendingCmd=6
+                EventMsg e;
+                e.type = EVT_NONE;
+                e.action = ACT_SENSOR_CMD;
+                e.value = 6;
+                Event_Push(e);
             }
         }
     }

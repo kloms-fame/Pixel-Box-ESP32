@@ -242,6 +242,9 @@ void setup()
   Serial.begin(115200);
   AppState.begin();
 
+  // 必须加上这句，初始化 FreeRTOS 队列！
+  Event_Init();
+
   // 🌟 修复：先初始化屏幕，点亮右上角黄色指示灯，表示正在配网校时
   Display_Init();
   Display_DrawPixel(15, 0, CRGB::Yellow);
@@ -254,7 +257,11 @@ void setup()
   ButtonManager_Init();
   VoiceAssistant_Init(); // 【新增】：仅需这一行唤醒语音模块
   Serial.println("🚀 Pixel-Box OS Core Ready.");
-  AppState.pendingCmd = 8;
+  EventMsg e;
+  e.type = EVT_NONE;
+  e.action = ACT_SENSOR_CMD;
+  e.value = 8;
+  Event_Push(e);
 }
 
 // ==========================================
@@ -363,9 +370,49 @@ void handleEvent(const EventMsg &e)
     break;
 
   // --- 传感器底层指令 ---
+  // --- 传感器底层指令 ---
   case ACT_SENSOR_CMD:
-    AppState.pendingCmd = e.value; // 暂存给原有 loop 中的执行逻辑
+  {
+    // [彻底接管] 不再赋值给 pendingCmd，而是直接在这里呼叫外设执行！
+    switch (e.value)
+    {
+    case 5:
+      SensorHub_StartScan([](uint8_t t, uint8_t at, std::string m, std::string n)
+                          { WebGateway_SendScanResult(t, at, m, n); });
+      break;
+    case 6:
+      SensorHub_Connect(AppState.pendingAddr);
+      break;
+    case 7:
+      SensorHub_Disconnect(AppState.pendingAddr);
+      break;
+    case 8:
+      SensorHub_TriggerAutoReconnect(false);
+      break;
+    case 9:
+      SensorHub_DisconnectAll();
+      break;
+    case 10:
+      SensorHub_TriggerAutoReconnect(true);
+      break;
+    case 11:
+      SensorHub_TriggerAutoReconnect(true, 1);
+      break;
+    case 12:
+      SensorHub_TriggerAutoReconnect(true, 2);
+      break;
+    case 13:
+      SensorHub_DisconnectType(1);
+      break;
+    case 14:
+      SensorHub_DisconnectType(2);
+      break;
+    case 99:
+      AppState.factoryReset();
+      break;
+    }
     break;
+  }
 
   default:
     break;
@@ -394,39 +441,6 @@ void loop()
 
   ButtonManager_Loop();
   VoiceAssistant_Loop();
-
-  // ================= 异步任务队列 =================
-  if (AppState.pendingCmd != 0)
-  {
-    int cmd = AppState.pendingCmd;
-    AppState.pendingCmd = 0;
-
-    if (cmd == 5)
-    {
-      SensorHub_StartScan([](uint8_t t, uint8_t at, std::string m, std::string n)
-                          { WebGateway_SendScanResult(t, at, m, n); });
-    }
-    else if (cmd == 6)
-      SensorHub_Connect(AppState.pendingAddr);
-    else if (cmd == 7)
-      SensorHub_Disconnect(AppState.pendingAddr);
-    else if (cmd == 8)
-      SensorHub_TriggerAutoReconnect(false);
-    else if (cmd == 9)
-      SensorHub_DisconnectAll();
-    else if (cmd == 10)
-      SensorHub_TriggerAutoReconnect(true);
-    else if (cmd == 99)
-      AppState.factoryReset();
-    else if (cmd == 11)
-      SensorHub_TriggerAutoReconnect(true, 1);
-    else if (cmd == 12)
-      SensorHub_TriggerAutoReconnect(true, 2);
-    else if (cmd == 13)
-      SensorHub_DisconnectType(1);
-    else if (cmd == 14)
-      SensorHub_DisconnectType(2);
-  }
 
   // ================= 时间守护进程 =================
   time_t now;
