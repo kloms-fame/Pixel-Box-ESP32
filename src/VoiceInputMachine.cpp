@@ -1,4 +1,5 @@
 #include "VoiceInputMachine.h"
+#include "EventBus.h"
 #include "VoiceAssistant.h"
 #include "GlobalState.h"
 #include "DisplayCore.h"
@@ -36,7 +37,7 @@ void VoiceInputMachine::startAlarmSelection()
 
 void VoiceInputMachine::startCountdownInput()
 {
-    AppState.currentMode = MODE_COUNTDOWN;
+    Event_Push({EVT_VOICE, ACT_MODE_SWITCH, MODE_COUNTDOWN});
     currentState = V_WAIT_CDOWN;
     inputIndex = 0;
     lastInputSysTime = millis();
@@ -55,8 +56,8 @@ void VoiceInputMachine::feedDigit(uint8_t digit)
         if (digit >= 1 && digit <= 3)
         {
             targetAlarmIndex = digit - 1; // 转换为 0, 1, 2
-            AppState.alarmDisplayIndex = targetAlarmIndex;
-            AppState.currentMode = MODE_ALARM;
+            Event_Push({EVT_VOICE, ACT_ALARM_SET_INDEX, targetAlarmIndex});
+            Event_Push({EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM});
 
             // 选好了，进入录入时间状态
             currentState = V_WAIT_ALARM;
@@ -113,11 +114,11 @@ void VoiceInputMachine::processAlarm()
 
     if (hh < 24 && mm < 60)
     {
-        uint8_t idx = AppState.alarmDisplayIndex;
-        AppState.saveAlarm(idx, true, hh, mm);
-        WebGateway_BroadcastAlarmState(idx);
+        uint8_t idx = targetAlarmIndex;
 
-        AppState.currentMode = MODE_ALARM;
+        uint32_t payload = (idx << 24) | (1 << 16) | (hh << 8) | mm;
+        Event_Push({EVT_VOICE, ACT_ALARM_SAVE, payload});
+        Event_Push({EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM});
 
         VoiceAssistant_Send2(0xA2, hh, mm);
         Serial.printf("[⏰ 闹钟] 设定成功: %02d:%02d\n", hh, mm);
@@ -137,13 +138,9 @@ void VoiceInputMachine::processCountdown()
 
     if (mm > 0 && mm <= 99)
     {
-        AppState.countdownTotalSeconds = mm * 60;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        AppState.isCountdownRunning = false;
 
-        AppState.currentMode = MODE_COUNTDOWN;
-
-        WebGateway_BroadcastCdownConfig();
+        Event_Push({EVT_VOICE, ACT_CDOWN_SET, (uint32_t)(mm * 60)});
+        Event_Push({EVT_VOICE, ACT_MODE_SWITCH, MODE_COUNTDOWN});
 
         VoiceAssistant_Send1(0xC2, mm);
         Serial.printf("[⏳ 倒数] 设定成功: %d 分钟\n", mm);

@@ -12,6 +12,9 @@ OneButton btnMode(BTN_MODE_PIN, true, true);
 OneButton btnPlus(BTN_PLUS_PIN, true, true);
 OneButton btnMinus(BTN_MINUS_PIN, true, true);
 OneButton btnOk(BTN_OK_PIN, true, true);
+static unsigned long lastPlusPress = 0;
+static unsigned long lastMinusPress = 0;
+const int PRESS_DELAY = 100; // 长按触发间隔（毫秒），数字越大越慢，300刚好能看清
 
 bool checkAndDismissAlerts()
 {
@@ -20,20 +23,17 @@ bool checkAndDismissAlerts()
     {
         if (AppState.alarms[i].isRinging)
         {
-            AppState.alarms[i].isRinging = false;
+            Event_Push({EVT_BTN, ACT_ALARM_STOP_RING, 0});
             alerted = true;
         }
     }
     if (AppState.isCountdownFinished)
     {
-        AppState.isCountdownFinished = false;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        alerted = true;
+        Event_Push({EVT_BTN, ACT_CDOWN_RESET, 0});
     }
     if (alerted)
     {
-        AppState_RequestMode(AppState.previousMode);
-        WebGateway_BroadcastBasicState();
+        Event_Push({EVT_BTN, ACT_MODE_SWITCH, AppState.previousMode});
         return true;
     }
     return false;
@@ -85,16 +85,12 @@ void onPlusClick()
 
     if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        AppState_RequestMode((AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM); // ✅ 统一入口
-        WebGateway_BroadcastBasicState();
+        Event_Push({EVT_BTN, ACT_MODE_SWITCH, (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM});
     }
     else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
-        uint32_t mins = AppState.countdownTotalSeconds / 60;
-        mins = mins % 60 + 1;
-        AppState.countdownTotalSeconds = mins * 60;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        WebGateway_BroadcastCdownConfig();
+        uint32_t mins = (AppState.countdownTotalSeconds / 60) % 60 + 1;
+        Event_Push({EVT_BTN, ACT_CDOWN_SET, mins * 60});
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
@@ -103,17 +99,13 @@ void onPlusClick()
         e.action = ACT_ALARM_SET_INDEX;
         e.value = (AppState.alarmDisplayIndex + 1) % 3;
         Event_Push(e);
-        AppState.needRender = true; // ✅ 仅触发渲染，由 main 循环统一刷新
     }
     else
     {
         int b = AppState.brightness + 5;
         if (b > 255)
             b = 255;
-        AppState.saveBrightness(b);
-        FastLED.setBrightness(b);
-        FastLED.show();
-        WebGateway_BroadcastBasicState();
+        Event_Push({EVT_BTN, ACT_SYS_BRIGHTNESS, (uint32_t)b});
     }
 }
 
@@ -129,19 +121,15 @@ void onMinusClick()
         e.action = ACT_MODE_SWITCH;
         e.value = (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM;
         Event_Push(e);
-        WebGateway_BroadcastBasicState();
     }
     else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
-        uint32_t mins = AppState.countdownTotalSeconds / 60;
-        mins = (mins - 1 - 1 + 60) % 60 + 1;
-        AppState.countdownTotalSeconds = mins * 60;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        WebGateway_BroadcastCdownConfig();
+        uint32_t mins = ((AppState.countdownTotalSeconds / 60) - 2 + 60) % 60 + 1;
+        Event_Push({EVT_BTN, ACT_CDOWN_SET, mins * 60});
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
-        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 2) % 3;
+        Event_Push({EVT_BTN, ACT_ALARM_SET_INDEX, (uint32_t)((AppState.alarmDisplayIndex + 2) % 3)});
     }
     else
     {
@@ -153,7 +141,6 @@ void onMinusClick()
         e.action = ACT_SYS_BRIGHTNESS;
         e.value = b;
         Event_Push(e);
-        WebGateway_BroadcastBasicState();
     }
 }
 
@@ -163,11 +150,15 @@ void onPlusLongPress()
         return;
     if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
+        // 控制速度：每隔300ms才触发一次
+        if (millis() - lastPlusPress < PRESS_DELAY)
+            return;
+        lastPlusPress = millis();
+
         uint32_t mins = AppState.countdownTotalSeconds / 60;
-        mins = (mins + 10 - 1) % 60 + 1;
-        AppState.countdownTotalSeconds = mins * 60;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        WebGateway_BroadcastCdownConfig();
+        // 循环逻辑：99 + 1 = 1
+        mins = (mins >= 99) ? 1 : mins + 1;
+        Event_Push({EVT_BTN, ACT_CDOWN_SET, mins * 60});
     }
 }
 
@@ -177,11 +168,15 @@ void onMinusLongPress()
         return;
     if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
+        // 控制速度：每隔300ms才触发一次
+        if (millis() - lastMinusPress < PRESS_DELAY)
+            return;
+        lastMinusPress = millis();
+
         uint32_t mins = AppState.countdownTotalSeconds / 60;
-        mins = (mins - 10 - 1 + 60) % 60 + 1;
-        AppState.countdownTotalSeconds = mins * 60;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        WebGateway_BroadcastCdownConfig();
+        // 循环逻辑：1 - 1 = 99
+        mins = (mins <= 1) ? 99 : mins - 1;
+        Event_Push({EVT_BTN, ACT_CDOWN_SET, mins * 60});
     }
 }
 
@@ -267,10 +262,15 @@ void onOkLongPress()
 void ButtonManager_Init()
 {
     btnMode.attachClick(onModeClick);
+
     btnPlus.attachClick(onPlusClick);
-    btnPlus.attachLongPressStart(onPlusLongPress);
+    btnPlus.attachDuringLongPress(onPlusLongPress);
+    btnPlus.setPressMs(500); // 长按500ms后开始连续加减
+
     btnMinus.attachClick(onMinusClick);
-    btnMinus.attachLongPressStart(onMinusLongPress);
+    btnMinus.attachDuringLongPress(onMinusLongPress);
+    btnMinus.setPressMs(500); // 长按500ms后开始连续加减
+
     btnOk.attachClick(onOkClick);
     btnOk.attachLongPressStart(onOkLongPress);
 }
