@@ -71,8 +71,11 @@ void onModeClick()
     e.value = m;
     Event_Push(e);
 
+    // ❌ Phase B：注释掉重复的直接调用
+    /*
     AppState_RequestMode((AppMode)m);
     WebGateway_BroadcastBasicState();
+    */
 }
 
 void onPlusClick()
@@ -189,39 +192,34 @@ void onOkClick()
     {
         if (!AppState.isTimerRunning)
         {
-            AppState.timerStartTime = millis();
-            AppState.isTimerRunning = true;
+            EventMsg e = {EVT_BTN, ACT_TIMER_START, 0};
+            Event_Push(e);
         }
         else
         {
-            AppState.timerElapsed += millis() - AppState.timerStartTime;
-            AppState.isTimerRunning = false;
+            EventMsg e = {EVT_BTN, ACT_TIMER_PAUSE, 0};
+            Event_Push(e);
         }
     }
     else if (AppState.currentMode == MODE_COUNTDOWN)
     {
+        // ✅ Phase B：改为事件
         if (!AppState.isCountdownRunning && AppState.countdownRemaining > 0)
         {
-            AppState.countdownStartSysTime = millis();
-            AppState.isCountdownRunning = true;
-            AppState.isCountdownFinished = false;
+            EventMsg e = {EVT_BTN, ACT_CDOWN_START, 0};
+            Event_Push(e);
         }
         else if (AppState.isCountdownRunning)
         {
-            uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
-            AppState.countdownRemaining = (elapsed < AppState.countdownRemaining) ? (AppState.countdownRemaining - elapsed) : 0;
-            AppState.isCountdownRunning = false;
+            EventMsg e = {EVT_BTN, ACT_CDOWN_PAUSE, 0};
+            Event_Push(e);
         }
     }
     else if (AppState.currentMode == MODE_ALARM)
     {
-        uint8_t idx = AppState.alarmDisplayIndex;
-        if (AppState.alarms[idx].isSet)
-        {
-            bool newState = !AppState.alarms[idx].enabled;
-            AppState.saveAlarm(idx, newState, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
-            WebGateway_BroadcastAlarmState(idx);
-        }
+        // ✅ Phase B：改为事件 (使用 TOGGLE)
+        EventMsg e = {EVT_BTN, ACT_ALARM_TOGGLE, AppState.alarmDisplayIndex};
+        Event_Push(e);
     }
 }
 
@@ -240,14 +238,15 @@ void onOkLongPress()
     }
     else if (AppState.currentMode == MODE_TIMER)
     {
-        AppState.timerElapsed = 0;
-        AppState.isTimerRunning = false;
+        // ✅ Phase B：改为事件
+        EventMsg e = {EVT_BTN, ACT_TIMER_RESET, 0};
+        Event_Push(e);
     }
     else if (AppState.currentMode == MODE_COUNTDOWN)
     {
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        AppState.isCountdownRunning = false;
-        AppState.isCountdownFinished = false;
+        // ✅ Phase B：改为事件
+        EventMsg e = {EVT_BTN, ACT_CDOWN_RESET, 0};
+        Event_Push(e);
     }
 }
 

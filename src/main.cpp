@@ -257,17 +257,139 @@ void setup()
   AppState.pendingCmd = 8;
 }
 
+// ==========================================
+// 全局唯一业务逻辑入口 (中央大脑)
+// 约束：所有的 AppState 修改必须在这里进行！
+// ==========================================
+void handleEvent(const EventMsg &e)
+{
+  switch (e.action)
+  {
+  // --- 模式切换 ---
+  case ACT_MODE_SWITCH:
+    AppState_RequestMode((AppMode)e.value);
+    break;
+
+  // --- 秒表业务 ---
+  case ACT_TIMER_START:
+    if (!AppState.isTimerRunning)
+    {
+      AppState.timerStartTime = millis();
+      AppState.isTimerRunning = true;
+    }
+    break;
+  case ACT_TIMER_PAUSE:
+    if (AppState.isTimerRunning)
+    {
+      AppState.timerElapsed += millis() - AppState.timerStartTime;
+      AppState.isTimerRunning = false;
+    }
+    break;
+  case ACT_TIMER_RESET:
+    AppState.timerElapsed = 0;
+    AppState.isTimerRunning = false;
+    break;
+
+  // --- 倒计时业务 ---
+  case ACT_CDOWN_SET:
+    AppState.countdownTotalSeconds = e.value;
+    AppState.countdownRemaining = AppState.countdownTotalSeconds;
+    AppState.isCountdownRunning = false;
+    AppState.isCountdownFinished = false;
+    WebGateway_BroadcastCdownConfig(); // 同步给前端
+    break;
+  case ACT_CDOWN_START:
+    if (!AppState.isCountdownRunning && AppState.countdownRemaining > 0)
+    {
+      AppState.countdownStartSysTime = millis();
+      AppState.isCountdownRunning = true;
+      AppState.isCountdownFinished = false;
+    }
+    break;
+  case ACT_CDOWN_PAUSE:
+    if (AppState.isCountdownRunning)
+    {
+      uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
+      AppState.countdownRemaining = (elapsed < AppState.countdownRemaining) ? (AppState.countdownRemaining - elapsed) : 0;
+      AppState.isCountdownRunning = false;
+    }
+    break;
+  case ACT_CDOWN_RESET:
+    AppState.countdownRemaining = AppState.countdownTotalSeconds;
+    AppState.isCountdownRunning = false;
+    AppState.isCountdownFinished = false;
+    break;
+
+  // --- 闹钟业务 ---
+  case ACT_ALARM_STOP_RING:
+    for (int i = 0; i < 3; i++)
+    {
+      if (AppState.alarms[i].isRinging)
+        AppState.alarms[i].isRinging = false;
+    }
+    break;
+  case ACT_ALARM_TOGGLE:
+    if (e.value < 3 && AppState.alarms[e.value].isSet)
+    {
+      bool newState = !AppState.alarms[e.value].enabled;
+      AppState.saveAlarm(e.value, newState, AppState.alarms[e.value].hour, AppState.alarms[e.value].minute);
+      WebGateway_BroadcastAlarmState(e.value);
+    }
+    break;
+  case ACT_ALARM_SET_INDEX:
+    if (e.value < 3)
+      AppState.alarmDisplayIndex = e.value;
+    break;
+  case ACT_ALARM_SAVE:
+  {
+    uint8_t idx = (e.value >> 24) & 0xFF;
+    uint8_t en = (e.value >> 16) & 0xFF;
+    uint8_t h = (e.value >> 8) & 0xFF;
+    uint8_t m = e.value & 0xFF;
+    AppState.saveAlarm(idx, en > 0, h, m);
+    WebGateway_BroadcastAlarmState(idx);
+    break;
+  }
+
+  // --- 硬件与系统业务 ---
+  case ACT_SYS_BRIGHTNESS:
+    AppState.saveBrightness(e.value);
+    Display_SetBrightness(e.value);   // ✅ 建议补充：立即生效屏幕亮度
+    AppState.needRender = true;       // 亮度改变，请求重绘
+    WebGateway_BroadcastBasicState(); // ✅ 关键补充：同步给手机 Web 端
+    break;
+  case ACT_SYS_AUTOREC:
+    AppState.saveAutoReconnect(e.value > 0);
+    break;
+
+  // --- 传感器底层指令 ---
+  case ACT_SENSOR_CMD:
+    AppState.pendingCmd = e.value; // 暂存给原有 loop 中的执行逻辑
+    break;
+
+  default:
+    break;
+  }
+
+  // 每次处理完有效事件，触发屏幕刷新
+  AppState.needRender = true;
+}
+
 void loop()
 {
   EventMsg msg;
   while (Event_Pop(&msg))
   {
+    // ✅ 1. 先打印日志（溯源用）
     Serial.print("[EVENT] type=");
     Serial.print(msg.type);
     Serial.print(" action=");
     Serial.print(msg.action);
     Serial.print(" value=");
     Serial.println(msg.value);
+
+    // ✅ 2. 再交给中央大脑处理
+    handleEvent(msg);
   }
 
   ButtonManager_Loop();

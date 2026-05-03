@@ -86,64 +86,57 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
 
     // ... (下方是你原本 V26 的所有 case 指令，完全保持原样，无需修改) ...
     case 0x0C:
-        // 【新增】记录设定倒计时的事件
-        EventMsg eSet;
-        eSet.type = EVT_VOICE;
-        eSet.action = ACT_CDOWN_SET;
-        eSet.value = param * 60;
+    {
+        EventMsg eSet = {EVT_VOICE, ACT_CDOWN_SET, (uint32_t)(param * 60)};
         Event_Push(eSet);
-
-        // 【新增】记录切屏到倒计时的事件
-        EventMsg eMode;
-        eMode.type = EVT_VOICE;
-        eMode.action = ACT_MODE_SWITCH;
-        eMode.value = MODE_COUNTDOWN;
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_COUNTDOWN};
         Event_Push(eMode);
-
-        // 【保留】所有旧代码，继续暴力修改 AppState 和直接刷屏
-        AppState.countdownTotalSeconds = param * 60;
-        AppState.countdownRemaining = AppState.countdownTotalSeconds;
-        AppState.isCountdownRunning = false;
-        AppState_RequestMode(MODE_COUNTDOWN);
         VoiceAssistant_Send1(0x01, param);
         break;
+    }
     case 0x0D:
+    {
         if (param == 1)
         {
-            AppState.countdownStartSysTime = millis();
-            AppState.isCountdownRunning = true;
-            AppState.isCountdownFinished = false;
+            EventMsg e = {EVT_VOICE, ACT_CDOWN_START, 0};
+            Event_Push(e);
         }
         else if (param == 0)
         {
-            AppState.isCountdownRunning = false;
+            EventMsg e = {EVT_VOICE, ACT_CDOWN_PAUSE, 0};
+            Event_Push(e);
         }
         else
         {
-            AppState.countdownRemaining = AppState.countdownTotalSeconds;
-            AppState.isCountdownRunning = false;
-            AppState.isCountdownFinished = false;
+            EventMsg e = {EVT_VOICE, ACT_CDOWN_RESET, 0};
+            Event_Push(e);
         }
-        AppState_RequestMode(MODE_COUNTDOWN);
+        // ✅ 模式切换也通过事件（或者因为上面的事件处理里已经包含了模式切换，这里可以省略）
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_COUNTDOWN};
+        Event_Push(eMode);
         break;
+    }
     case 0x0A:
+    {
         if (param == 1)
         {
-            AppState.timerStartTime = millis();
-            AppState.isTimerRunning = true;
+            EventMsg e = {EVT_VOICE, ACT_TIMER_START, 0};
+            Event_Push(e);
         }
         else if (param == 0)
         {
-            AppState.timerElapsed += millis() - AppState.timerStartTime;
-            AppState.isTimerRunning = false;
+            EventMsg e = {EVT_VOICE, ACT_TIMER_PAUSE, 0};
+            Event_Push(e);
         }
         else
         {
-            AppState.timerElapsed = 0;
-            AppState.isTimerRunning = false;
+            EventMsg e = {EVT_VOICE, ACT_TIMER_RESET, 0};
+            Event_Push(e);
         }
-        AppState_RequestMode(MODE_TIMER);
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_TIMER};
+        Event_Push(eMode);
         break;
+    }
     case 0x34:
         metronomeEnabled = true;
         metronomeBpm = param;
@@ -213,76 +206,135 @@ void ProcessVoiceCommand(uint8_t cmd, uint8_t param)
     }
     break;
     case 0x05:
+    {
+        int targetBrightness = AppState.brightness;
         if (param == 1)
-        {
-            int b = min(255, AppState.brightness + 50);
-            AppState.saveBrightness(b);
-            Display_SetBrightness(b);
-        }
+            targetBrightness = min(255, AppState.brightness + 50);
         else
-        {
-            int b = max(5, AppState.brightness - 50);
-            AppState.saveBrightness(b);
-            Display_SetBrightness(b);
-        }
+            targetBrightness = max(5, AppState.brightness - 50);
+
+        EventMsg e = {EVT_VOICE, ACT_SYS_BRIGHTNESS, (uint32_t)targetBrightness};
+        Event_Push(e);
         break;
+    }
     case 0x03:
-        AppState_RequestMode(MODE_OFF);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_OFF};
+        Event_Push(e);
         break;
+    }
     case 0x04:
     case 0x52:
-        AppState_RequestMode(MODE_CLOCK);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_CLOCK};
+        Event_Push(e);
         break;
+    }
     case 0x54:
-        AppState_RequestMode(MODE_TIMER);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_TIMER};
+        Event_Push(e);
         break;
+    }
     case 0x55:
-        AppState_RequestMode(MODE_COUNTDOWN);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_COUNTDOWN};
+        Event_Push(e);
         break;
+    }
     case 0x56:
-        AppState_RequestMode(MODE_ALARM);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM};
+        Event_Push(e);
         break;
+    }
     case 0x58:
-        AppState_RequestMode(MODE_SENSOR_CSC);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_SENSOR_CSC};
+        Event_Push(e);
         break;
+    }
     case 0x59:
-        AppState_RequestMode(MODE_SENSOR_HRM);
+    {
+        EventMsg e = {EVT_VOICE, ACT_MODE_SWITCH, MODE_SENSOR_HRM};
+        Event_Push(e);
         break;
+    }
     case 0x5A:
-        AppState_RequestMode(MODE_ALARM);
-        AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
+    {
+        // ✅ 先切换模式
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM};
+        Event_Push(eMode);
+        // ✅ 再切换索引
+        uint8_t newIdx = (AppState.alarmDisplayIndex + 1) % 3;
+        EventMsg eIdx = {EVT_VOICE, ACT_ALARM_SET_INDEX, newIdx};
+        Event_Push(eIdx);
         break;
+    }
     case 0x5B:
-        AppState_RequestMode(MODE_ALARM);
-        {
-            uint8_t idx = AppState.alarmDisplayIndex;
-            AppState.saveAlarm(idx, true, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
-            WebGateway_BroadcastAlarmState(idx);
-        }
+    {
+        // ✅ 确保在闹钟模式
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM};
+        Event_Push(eMode);
+
+        // ✅ 参数打包：(idx<<24) | (en<<16) | (h<<8) | m
+        uint8_t idx = AppState.alarmDisplayIndex;
+        uint32_t packed = ((uint32_t)idx << 24) |
+                          ((uint32_t)1 << 16) | // en = true
+                          ((uint32_t)AppState.alarms[idx].hour << 8) |
+                          ((uint32_t)AppState.alarms[idx].minute);
+
+        EventMsg eSave = {EVT_VOICE, ACT_ALARM_SAVE, packed};
+        Event_Push(eSave);
         break;
+    }
     case 0x5C:
-        AppState_RequestMode(MODE_ALARM);
-        {
-            uint8_t idx = AppState.alarmDisplayIndex;
-            AppState.saveAlarm(idx, false, AppState.alarms[idx].hour, AppState.alarms[idx].minute);
-            WebGateway_BroadcastAlarmState(idx);
-        }
+    {
+        // 1. 切到闹钟模式
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM};
+        Event_Push(eMode);
+
+        // 2. 打包参数并保存 (en = false)
+        uint8_t idx = AppState.alarmDisplayIndex;
+        uint32_t packed = ((uint32_t)idx << 24) |
+                          ((uint32_t)0 << 16) |
+                          ((uint32_t)AppState.alarms[idx].hour << 8) |
+                          ((uint32_t)AppState.alarms[idx].minute);
+
+        EventMsg eSave = {EVT_VOICE, ACT_ALARM_SAVE, packed};
+        Event_Push(eSave);
         break;
+    }
     case 0x5D:
-        AppState_RequestMode(MODE_ALARM);
-        {
-            uint8_t idx = AppState.alarmDisplayIndex;
-            AppState.saveAlarm(idx, false, 0, 0);
-            AppState.alarms[idx].isSet = false;
-            WebGateway_BroadcastAlarmState(idx);
-        }
+    {
+        // 1. 切到闹钟模式
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_ALARM};
+        Event_Push(eMode);
+
+        // 2. 打包参数并清除 (h = 0, m = 0, en = 0)
+        uint8_t idx = AppState.alarmDisplayIndex;
+        uint32_t packed = ((uint32_t)idx << 24) |
+                          ((uint32_t)0 << 16) |
+                          ((uint32_t)0 << 8) |
+                          ((uint32_t)0);
+
+        EventMsg eSave = {EVT_VOICE, ACT_ALARM_SAVE, packed};
+        Event_Push(eSave);
         break;
+    }
     case 0x32:
-        for (int i = 0; i < 3; i++)
-            AppState.alarms[i].isRinging = false;
-        AppState.isCountdownFinished = false;
-        AppState_RequestMode(MODE_CLOCK);
+    {
+        // ✅ 停止响铃事件
+        EventMsg eStop = {EVT_VOICE, ACT_ALARM_STOP_RING, 0};
+        Event_Push(eStop);
+        // ✅ 停止倒计时（如果需要）
+        EventMsg eCdReset = {EVT_VOICE, ACT_CDOWN_RESET, 0};
+        Event_Push(eCdReset);
+        // ✅ 切回时钟
+        EventMsg eMode = {EVT_VOICE, ACT_MODE_SWITCH, MODE_CLOCK};
+        Event_Push(eMode);
         break;
+    }
     case 0x33:
         for (int i = 0; i < 3; i++)
         {

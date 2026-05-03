@@ -74,8 +74,8 @@ public:
     unsigned long timerElapsed = 0;
     bool isCountdownRunning = false;
     bool isCountdownFinished = false;
-    uint32_t countdownTotalSeconds = 0;
-    uint32_t countdownRemaining = 0;
+    uint32_t countdownTotalSeconds = 900;
+    uint32_t countdownRemaining = 900;
     unsigned long countdownStartSysTime = 0;
     unsigned long countdownFinishSysTime = 0;
     uint8_t alarmDisplayIndex = 0;

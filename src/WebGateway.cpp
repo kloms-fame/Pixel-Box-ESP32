@@ -37,18 +37,12 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         {
             uint8_t b = rx[1];
 
-            // 【新增】推入修改亮度事件
+            // ✅ Phase B：只发事件，不直接操作
             EventMsg e;
             e.type = EVT_WEB;
-            e.action = ACT_BRIGHTNESS_SET;
+            e.action = ACT_SYS_BRIGHTNESS;
             e.value = b;
             Event_Push(e);
-
-            // 【保留】原逻辑，直接操作 NVS 和 FastLED
-            AppState.saveBrightness(b);
-            Display_SetBrightness(b);
-
-            WebGateway_BroadcastBasicState();
         }
         else if (cmd == 0x02 && rx.length() >= 4)
         {
@@ -58,20 +52,39 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x03)
         {
-            AppState.currentMode = MODE_OFF;
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_MODE_SWITCH;
+            e.value = MODE_OFF;
+            Event_Push(e);
             Serial.println("[📺 UI] 执行强制息屏");
         }
         else if (cmd == 0x04 && rx.length() >= 5)
         {
+            // ✅ Phase B：时间同步比较特殊，涉及系统时间设置，这部分保留原样
+            // 但切回时钟模式改为事件
             uint32_t ts = ((uint32_t)rx[1] << 24) | ((uint32_t)rx[2] << 16) | ((uint32_t)rx[3] << 8) | (uint32_t)rx[4];
             struct timeval tv = {.tv_sec = (time_t)ts, .tv_usec = 0};
             settimeofday(&tv, NULL);
-            AppState.currentMode = MODE_CLOCK;
+
+            // ✅ 切模式改为事件
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_MODE_SWITCH;
+            e.value = MODE_CLOCK;
+            Event_Push(e);
+
             Serial.println("[🕒 UI] 时间同步，切入时钟模式");
         }
         else if (cmd == 0x05)
         {
-            AppState.pendingCmd = 5;
+            // ✅ Phase B：改为事件驱动 (使用 ACT_SENSOR_CMD)
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_SENSOR_CMD;
+            e.value = 5; // 对应原 pendingCmd = 5
+            Event_Push(e);
+
             Serial.println("[⚡ TASK] 雷达扫描入队");
         }
         else if (cmd == 0x06 && rx.length() > 2)
@@ -88,96 +101,175 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x08)
         {
+            // ✅ Phase B：改为事件驱动
+            AppMode targetMode = MODE_SENSOR_HRM;
             if (AppState.currentMode == MODE_SENSOR_HRM)
-                AppState.currentMode = MODE_SENSOR_CSC;
+                targetMode = MODE_SENSOR_CSC;
             else if (AppState.currentMode == MODE_SENSOR_CSC)
-                AppState.currentMode = MODE_SENSOR_HRM;
+                targetMode = MODE_SENSOR_HRM;
             else
             {
                 if (SensorHub_HasCSC() && !SensorHub_HasHRM())
-                    AppState.currentMode = MODE_SENSOR_CSC;
-                else
-                    AppState.currentMode = MODE_SENSOR_HRM;
+                    targetMode = MODE_SENSOR_CSC;
             }
-            WebGateway_BroadcastBasicState();
+
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_MODE_SWITCH;
+            e.value = targetMode;
+            Event_Push(e);
+
             Serial.println("[🚴 UI] 切换并进入运动数据面板");
         }
         else if (cmd == 0x09)
         {
-            AppState.currentMode = MODE_TIMER;
+            // ✅ Phase B：改为事件驱动
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_MODE_SWITCH;
+            e.value = MODE_TIMER;
+            Event_Push(e);
         }
         else if (cmd == 0x0A && rx.length() >= 2)
         {
+            // ✅ Phase B：改为事件驱动
             uint8_t action = rx[1];
-            if (action == 0x01 && !AppState.isTimerRunning)
+
+            // 1. 先确保在秒表模式
+            EventMsg eMode;
+            eMode.type = EVT_WEB;
+            eMode.action = ACT_MODE_SWITCH;
+            eMode.value = MODE_TIMER;
+            Event_Push(eMode);
+
+            // 2. 再发送控制指令
+            if (action == 0x01)
             {
-                AppState.timerStartTime = millis();
-                AppState.isTimerRunning = true;
-                AppState.currentMode = MODE_TIMER;
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_TIMER_START;
+                e.value = 0;
+                Event_Push(e);
             }
-            else if (action == 0x00 && AppState.isTimerRunning)
+            else if (action == 0x00)
             {
-                AppState.timerElapsed += millis() - AppState.timerStartTime;
-                AppState.isTimerRunning = false;
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_TIMER_PAUSE;
+                e.value = 0;
+                Event_Push(e);
             }
             else if (action == 0x02)
             {
-                AppState.timerElapsed = 0;
-                AppState.isTimerRunning = false;
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_TIMER_RESET;
+                e.value = 0;
+                Event_Push(e);
             }
         }
         else if (cmd == 0x0B)
         {
-            AppState.currentMode = MODE_COUNTDOWN;
-
-            AppState.needRender = true;
+            // ✅ Phase B：改为事件驱动
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_MODE_SWITCH;
+            e.value = MODE_COUNTDOWN;
+            Event_Push(e);
         }
         else if (cmd == 0x0C && rx.length() >= 2)
         {
-            AppState.countdownTotalSeconds = rx[1] * 60;
-            AppState.countdownRemaining = AppState.countdownTotalSeconds;
-            AppState.isCountdownRunning = AppState.isCountdownFinished = false;
-            AppState.currentMode = MODE_COUNTDOWN;
+            // ✅ Phase B：改为事件驱动
+            EventMsg eSet;
+            eSet.type = EVT_WEB;
+            eSet.action = ACT_CDOWN_SET;
+            eSet.value = (uint32_t)rx[1] * 60;
+            Event_Push(eSet);
+
+            EventMsg eMode;
+            eMode.type = EVT_WEB;
+            eMode.action = ACT_MODE_SWITCH;
+            eMode.value = MODE_COUNTDOWN;
+            Event_Push(eMode);
         }
         else if (cmd == 0x0D && rx.length() >= 2)
         {
+            // ✅ Phase B：改为事件驱动
             uint8_t action = rx[1];
-            if (action == 0x01 && !AppState.isCountdownRunning && AppState.countdownRemaining > 0)
+
+            // 1. 先确保在倒计时模式
+            EventMsg eMode;
+            eMode.type = EVT_WEB;
+            eMode.action = ACT_MODE_SWITCH;
+            eMode.value = MODE_COUNTDOWN;
+            Event_Push(eMode);
+
+            // 2. 再发送控制指令
+            if (action == 0x01)
             {
-                AppState.countdownStartSysTime = millis();
-                AppState.isCountdownRunning = true;
-                AppState.isCountdownFinished = false;
-                AppState.currentMode = MODE_COUNTDOWN;
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_CDOWN_START;
+                e.value = 0;
+                Event_Push(e);
             }
-            else if (action == 0x00 && AppState.isCountdownRunning)
+            else if (action == 0x00)
             {
-                uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
-                AppState.countdownRemaining = (elapsed < AppState.countdownRemaining) ? (AppState.countdownRemaining - elapsed) : 0;
-                AppState.isCountdownRunning = false;
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_CDOWN_PAUSE;
+                e.value = 0;
+                Event_Push(e);
             }
             else if (action == 0x02)
             {
-                AppState.countdownRemaining = AppState.countdownTotalSeconds;
-                AppState.isCountdownRunning = AppState.isCountdownFinished = false;
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_CDOWN_RESET;
+                e.value = 0;
+                Event_Push(e);
             }
         }
         else if (cmd == 0x0E)
         {
-            if (AppState.currentMode == MODE_ALARM)
-                AppState.alarmDisplayIndex = (AppState.alarmDisplayIndex + 1) % 3;
-            else
-            {
-                AppState.currentMode = MODE_ALARM;
-                AppState.alarmDisplayIndex = 0;
-            }
+            // ✅ Phase B：改为事件驱动
+            // 1. 先切到闹钟模式
+            EventMsg eMode;
+            eMode.type = EVT_WEB;
+            eMode.action = ACT_MODE_SWITCH;
+            eMode.value = MODE_ALARM;
+            Event_Push(eMode);
+
+            // 2. 计算新索引并发送事件
+            // 注意：因为事件是异步的，我们这里基于当前值计算下一个索引
+            uint8_t nextIdx = (AppState.alarmDisplayIndex + 1) % 3;
+
+            EventMsg eIdx;
+            eIdx.type = EVT_WEB;
+            eIdx.action = ACT_ALARM_SET_INDEX;
+            eIdx.value = nextIdx;
+            Event_Push(eIdx);
         }
         else if (cmd == 0x0F && rx.length() >= 5)
         {
+            // ✅ Phase B：改为事件驱动 (参数打包)
             uint8_t idx = rx[1];
+            uint8_t en = rx[2];
+            uint8_t h = rx[3];
+            uint8_t m = rx[4];
+
             if (idx < 3)
             {
-                AppState.saveAlarm(idx, rx[2], rx[3], rx[4]);
-                AppState.alarms[idx].isRinging = false;
+                uint32_t packed = ((uint32_t)idx << 24) |
+                                  ((uint32_t)en << 16) |
+                                  ((uint32_t)h << 8) |
+                                  ((uint32_t)m);
+
+                EventMsg e;
+                e.type = EVT_WEB;
+                e.action = ACT_ALARM_SAVE;
+                e.value = packed;
+                Event_Push(e);
             }
         }
         else if (cmd == 0x10)
@@ -204,7 +296,12 @@ class RxCallbacks : public NimBLECharacteristicCallbacks
         }
         else if (cmd == 0x13 && rx.length() >= 2)
         {
-            AppState.saveAutoReconnect(rx[1] == 1);
+            // ✅ Phase B：改为事件驱动
+            EventMsg e;
+            e.type = EVT_WEB;
+            e.action = ACT_SYS_AUTOREC;
+            e.value = (uint32_t)(rx[1] == 1 ? 1 : 0);
+            Event_Push(e);
         }
         else if (cmd == 0x14 && rx.length() > 2)
         {
