@@ -33,7 +33,7 @@ bool checkAndDismissAlerts()
     }
     if (alerted)
     {
-        Event_Push({EVT_BTN, ACT_MODE_SWITCH, (uint32_t)AppState.previousMode});
+        Event_Push({EVT_BTN, ACT_MODE_SWITCH, AppState.previousMode});
         return true;
     }
     return false;
@@ -70,6 +70,12 @@ void onModeClick()
     e.action = ACT_MODE_SWITCH;
     e.value = m;
     Event_Push(e);
+
+    // ❌ Phase B：注释掉重复的直接调用
+    /*
+    AppState_RequestMode((AppMode)m);
+    WebGateway_BroadcastBasicState();
+    */
 }
 
 void onPlusClick()
@@ -79,7 +85,7 @@ void onPlusClick()
 
     if (AppState.currentMode == MODE_SENSOR_HRM || AppState.currentMode == MODE_SENSOR_CSC)
     {
-        Event_Push({EVT_BTN, ACT_MODE_SWITCH, (uint32_t)((AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM)});
+        Event_Push({EVT_BTN, ACT_MODE_SWITCH, (AppState.currentMode == MODE_SENSOR_HRM) ? MODE_SENSOR_CSC : MODE_SENSOR_HRM});
     }
     else if (AppState.currentMode == MODE_COUNTDOWN && !AppState.isCountdownRunning)
     {
