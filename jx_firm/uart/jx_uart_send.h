@@ -24,6 +24,10 @@ extern "C" {
 #define U_MSG_AlarmSetError      163
 #define U_MSG_CountDownSuc      194
 #define U_MSG_CountDownEro      195
+#define U_MSG_AlarmGroupOK      165
+#define U_MSG_AlarmGroupEro      166
+#define U_MSG_INPUT_TIMEOUT      98
+#define U_MSG_Reminder      17
 
 // 串口消息参数类型
 typedef union {
@@ -113,6 +117,18 @@ void _uart_CountDownSuc(unsigned char CountDownMin);
 
 // action: CountDownEro
 void _uart_CountDownEro();
+
+// action: AlarmGroupOK
+void _uart_AlarmGroupOK(unsigned char AlarmGroup);
+
+// action: AlarmGroupEro
+void _uart_AlarmGroupEro();
+
+// action: INPUT_TIMEOUT
+void _uart_INPUT_TIMEOUT();
+
+// action: Reminder
+void _uart_Reminder();
 
 #ifdef __cplusplus
 }

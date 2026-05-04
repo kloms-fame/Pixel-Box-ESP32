@@ -249,3 +249,65 @@ void _uart_CountDownEro() {
   _uart_send_impl(buff, 5);
 }
 
+// action: AlarmGroupOK
+void _uart_AlarmGroupOK(unsigned char AlarmGroup) {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_AlarmGroupOK;
+  param.d_uchar = AlarmGroup;
+  buff[3] = param.d_uchar;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 4] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 6);
+}
+
+// action: AlarmGroupEro
+void _uart_AlarmGroupEro() {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_AlarmGroupEro;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 3] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 5);
+}
+
+// action: INPUT_TIMEOUT
+void _uart_INPUT_TIMEOUT() {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_INPUT_TIMEOUT;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 3] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 5);
+}
+
+// action: Reminder
+void _uart_Reminder() {
+  uart_param_t param;
+  int i = 0;
+  unsigned char buff[UART_SEND_MAX] = {0};
+  for (i = 0; i < UART_MSG_HEAD_LEN; i++) {
+      buff[i + 0] = g_uart_send_head[i];
+  }
+  buff[2] = U_MSG_Reminder;
+  for (i = 0; i < UART_MSG_FOOT_LEN; i++) {
+      buff[i + 3] = g_uart_send_foot[i];
+  }
+  _uart_send_impl(buff, 5);
+}
+
