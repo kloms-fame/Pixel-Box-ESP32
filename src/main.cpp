@@ -442,7 +442,15 @@ void loop()
   ButtonManager_Loop();
   VoiceAssistant_Loop();
 
-  // ================= 时间守护进程 =================
+  // ================= 【新增】踏频超时清零守护 =================
+  // 如果当前踏频有数值，且距离最后一次有效踩踏超过 3000 毫秒 (3秒)
+  if (AppState.currentCadence > 0 && (millis() - AppState.lastCrankSysTime > 3000))
+  {
+    AppState.currentCadence = 0;
+    AppState.needRender = true; // 触发屏幕刷新，让 UI 显示为 0
+  }
+
+  // ================= 时间守护进程 (原有闹钟触发逻辑) =================
   time_t now;
   struct tm timeinfo;
   time(&now);
@@ -462,6 +470,57 @@ void loop()
           AppState_RequestMode(MODE_ALARM); // 统一入口
       }
     }
+  }
+
+  // ================= 【新增】倒计时主动结算守护 =================
+  if (AppState.isCountdownRunning)
+  {
+    uint32_t elapsed = (millis() - AppState.countdownStartSysTime) / 1000;
+    // 如果已经经过的时间超过或等于设定的总时间
+    if (elapsed >= AppState.countdownRemaining)
+    {
+      AppState.isCountdownRunning = false;
+      AppState.isCountdownFinished = true;
+      AppState.countdownFinishSysTime = millis(); // 记录结束时间用于闪屏和响铃
+      if (AppState.currentMode != MODE_COUNTDOWN)
+        AppState_RequestMode(MODE_COUNTDOWN); // 强制切到倒计时界面
+    }
+  }
+
+  // ================= 【新增】SU-03T 语音循环报警守护 =================
+  static unsigned long lastVoiceBeepTime = 0;
+  bool isAlerting = false;
+
+  // 1. 检查是否有闹钟正在响铃
+  for (int i = 0; i < 3; i++)
+  {
+    if (AppState.alarms[i].isRinging)
+    {
+      isAlerting = true;
+      break;
+    }
+  }
+
+  // 2. 检查是否有倒计时刚刚结束 (判断逻辑与UI闪屏保持一致：持续10秒报警期)
+  if (!isAlerting && AppState.isCountdownFinished && (millis() - AppState.countdownFinishSysTime <= 10000))
+  {
+    isAlerting = true;
+  }
+
+  // 3. 如果处于报警状态，持续向语音模块发送指令
+  if (isAlerting)
+  {
+    // 每 1000 毫秒 (1秒) 发送一次，避免发得太快导致语音模块卡死或声音重叠
+    if (millis() - lastVoiceBeepTime >= 1000)
+    {
+      lastVoiceBeepTime = millis();
+      VoiceAssistant_Send0(17); // 向 SU-03T 发送编号 17 的指令触发“哔”声
+    }
+  }
+  else
+  {
+    // 退出提醒状态后重置时间戳，保证下一次触发提醒时第一声能【立刻】响起来
+    lastVoiceBeepTime = 0;
   }
 
   // ================= 统一渲染管线 (修复版) =================
@@ -501,8 +560,7 @@ void loop()
 
     // 3. 唯一推屏点
     Display_Show();
-  } // <--- 注意这里的括号！
+  }
 
-  // ✅ 必须放在所有逻辑的最外层，保证每一次 loop 都能让出 CPU 10毫秒
   delay(10);
-} // end of loop()
+}
