@@ -370,7 +370,6 @@ void handleEvent(const EventMsg &e)
     break;
 
   // --- 传感器底层指令 ---
-  // --- 传感器底层指令 ---
   case ACT_SENSOR_CMD:
   {
     // [彻底接管] 不再赋值给 pendingCmd，而是直接在这里呼叫外设执行！
